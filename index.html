@@ -1,7 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+  >
+
+  <title>TrackMaster Scanner</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
+
 <body>
+  <main class="scanner-page">
+    <h1>TrackMaster Scanner</h1>
+
+    <section class="scanner-window">
+      <video id="camera" playsinline></video>
+      <div class="scan-guide"></div>
+    </section>
+
+    <div id="status" class="status">
+      Press Start Scanner
+    </div>
+
+    <button id="start-button" type="button">
+      Start Scanner
+    </button>
+
+    <section class="results">
+      <h2>Last scanned carton</h2>
+      <div id="scan-result">None</div>
+
+      <h2>Scan count</h2>
+      <div id="scan-count">0</div>
+    </section>
+  </main>
+
+  <script src="scanner.js"></script>
 </body>
 </html>
