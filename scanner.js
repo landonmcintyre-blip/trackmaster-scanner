@@ -78,6 +78,7 @@ let lastCode = "";
 let lastScanTime = 0;
 let scannerRunning = false;
 let audioContext;
+const scannedCartons = new Set();
 
 startButton.addEventListener("click", startScanner);
 exitButton.addEventListener("click", exitScanner);
@@ -140,26 +141,70 @@ async function startScanner() {
 }
 
 function handleScan(rawValue) {
-  const barcode = rawValue.trim();
+  if (!cartonDataReady || !scannerRunning) {
+    return;
+  }
+
+  const barcode = String(rawValue)
+    .trim()
+    .toUpperCase();
+
   const now = Date.now();
 
-  // Stops one barcode from repeatedly registering
-  // while it remains in front of the camera.
   if (barcode === lastCode && now - lastScanTime < 2000) {
     return;
   }
 
   lastCode = barcode;
   lastScanTime = now;
+
+  // Anything that is not C followed by numbers is unknown.
+  if (!/^C\d+$/.test(barcode)) {
+    hardStop(
+      "UNKNOWN BARCODE",
+      `${barcode}\n\nThis is not a TrackMaster carton number.`
+    );
+    return;
+  }
+
+  const carton = cartonLookup.get(barcode);
+
+  // Correct format, but not present anywhere on this truck.
+  if (!carton) {
+    hardStop(
+      "UNKNOWN CARTON",
+      `${barcode}\n\nThis carton is not assigned to this shipping event.`
+    );
+    return;
+  }
+
+  // It exists on the truck, but belongs at another stop.
+  if (carton.dropId !== activeDropId) {
+    hardStop(
+      "WRONG DROP",
+      `${barcode} belongs to Drop ${carton.dropNumber}\n${carton.customer}`
+    );
+    return;
+  }
+
+  // Already accepted during this scanner session.
+  if (scannedCartons.has(barcode)) {
+    statusBox.textContent =
+      `Already scanned: ${barcode}`;
+
+    resultBox.textContent = barcode;
+    return;
+  }
+
+  scannedCartons.add(barcode);
   scanCount += 1;
 
   resultBox.textContent = barcode;
   countBox.textContent = scanCount;
-  statusBox.textContent = `Scanned: ${barcode}`;
+  statusBox.textContent = `Correct: ${barcode}`;
 
   playBeep();
 
-  // Works on supported devices. iPhone browsers may ignore it.
   if (navigator.vibrate) {
     navigator.vibrate(150);
   }
@@ -169,6 +214,29 @@ function handleScan(rawValue) {
   setTimeout(() => {
     document.body.classList.remove("scan-success");
   }, 250);
+}
+
+
+function hardStop(title, message) {
+  codeReader.reset();
+  scannerRunning = false;
+  startButton.disabled = true;
+
+  document.body.classList.remove("scan-success");
+  document.body.classList.add("scan-error");
+
+  statusBox.textContent = title;
+  resultBox.textContent = message;
+
+  if (navigator.vibrate) {
+    navigator.vibrate([300, 150, 300]);
+  }
+
+  setTimeout(() => {
+    alert(
+      `${title}\n\n${message}\n\nReload the incorrect product, then tap X to return to AppSheet.`
+    );
+  }, 100);
 }
 
 function playBeep() {
