@@ -58,8 +58,13 @@ async function loadCartonData() {
   carton => carton.dropId === activeDropId
 );
 
-    const activeDropName =
+    const rawDropName =
   activeDropCartons[0]?.customer || "Unknown stop";
+
+const activeDropName = rawDropName
+  .replace(/^.*?\*\s*JOBSITE\s*\*\s*/i, "")
+  .replace(/\s+/g, " ")
+  .trim();
 
 dropIdBox.textContent = activeDropName;
 statusBox.textContent =
