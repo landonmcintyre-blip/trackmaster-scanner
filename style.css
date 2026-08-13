@@ -31,7 +31,7 @@ h1 {
   background: black;
   border: 3px solid #374151;
   border-radius: 14px;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 4 / 3;
 }
 
 #camera {
@@ -45,7 +45,7 @@ h1 {
   top: 50%;
   left: 10%;
   width: 80%;
-  height: 110px;
+  height: 80px;
   transform: translateY(-50%);
   border: 3px solid #f97316;
   border-radius: 10px;
