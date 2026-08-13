@@ -93,6 +93,7 @@ const scannedCartons = new Set();
 startButton.addEventListener("click", startScanner);
 
 async function startScanner() {
+  document.body.classList.remove("scan-error");
   if (scannerRunning) return;
 
   // Starting audio from a button press allows sound on iPhone.
@@ -229,7 +230,9 @@ function handleScan(rawValue) {
 function hardStop(title, message) {
   codeReader.reset();
   scannerRunning = false;
-  startButton.disabled = true;
+
+  // Allow the driver to restart after acknowledging the warning.
+  startButton.disabled = false;
 
   document.body.classList.remove("scan-success");
   document.body.classList.add("scan-error");
@@ -243,7 +246,7 @@ function hardStop(title, message) {
 
   setTimeout(() => {
     alert(
-      `${title}\n\n${message}\n\nReload the incorrect product, then tap X to return to AppSheet.`
+      `${title}\n\n${message}\n\nVerify the carton before continuing.`
     );
   }, 100);
 }
