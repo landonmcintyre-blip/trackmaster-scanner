@@ -136,26 +136,3 @@ function playBeep() {
   oscillator.start();
   oscillator.stop(audioContext.currentTime + 0.12);
 }
-
-function exitScanner() {
-  codeReader.reset();
-  scannerRunning = false;
-
-  if (audioContext) {
-    audioContext.close();
-    audioContext = null;
-  }
-
-  setTimeout(() => {
-    window.history.back();
-  }, 100);
-}
-
-  if (window.history.length > 1) {
-    window.history.back();
-  } else {
-    statusBox.textContent = "Scanner stopped.";
-    startButton.disabled = false;
-    startButton.textContent = "Start Scanner";
-  }
-}
