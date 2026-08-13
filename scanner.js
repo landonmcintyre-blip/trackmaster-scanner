@@ -3,7 +3,6 @@ const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("scan-result");
 const countBox = document.getElementById("scan-count");
 const startButton = document.getElementById("start-button");
-const exitButton = document.getElementById("exit-button");
 const dropIdBox = document.getElementById("drop-id");
 
 const urlParams = new URLSearchParams(window.location.search);
@@ -92,7 +91,6 @@ let audioContext;
 const scannedCartons = new Set();
 
 startButton.addEventListener("click", startScanner);
-exitButton.addEventListener("click", exitScanner);
 
 async function startScanner() {
   if (scannerRunning) return;
