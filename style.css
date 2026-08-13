@@ -1,1 +1,105 @@
-/* TrackMaster Scanner */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #111827;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.scanner-page {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 18px;
+  text-align: center;
+}
+
+h1 {
+  margin: 0 0 16px;
+  color: #f97316;
+  font-size: 28px;
+}
+
+.scanner-window {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: black;
+  border: 3px solid #374151;
+  border-radius: 14px;
+  aspect-ratio: 3 / 4;
+}
+
+#camera {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.scan-guide {
+  position: absolute;
+  top: 50%;
+  left: 10%;
+  width: 80%;
+  height: 110px;
+  transform: translateY(-50%);
+  border: 3px solid #f97316;
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+.status {
+  min-height: 54px;
+  margin: 14px 0;
+  padding: 14px;
+  background: #1f2937;
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+#start-button {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 10px;
+  background: #f97316;
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+#start-button:disabled {
+  background: #4b5563;
+}
+
+.results {
+  margin-top: 16px;
+  padding: 16px;
+  background: #1f2937;
+  border-radius: 10px;
+}
+
+.results h2 {
+  margin: 12px 0 6px;
+  color: #9ca3af;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+#scan-result {
+  overflow-wrap: anywhere;
+  color: #f97316;
+  font-size: 26px;
+  font-weight: bold;
+}
+
+#scan-count {
+  font-size: 28px;
+  font-weight: bold;
+}
