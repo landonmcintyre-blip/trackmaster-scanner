@@ -58,10 +58,16 @@ async function loadCartonData() {
   carton => carton.dropId === activeDropId
 );
 
+    const activeDropName =
+  activeDropCartons[0]?.customer || "Unknown stop";
+
+dropIdBox.textContent = activeDropName;
 statusBox.textContent =
   `Ready — ${activeDropCartons.length} cartons for this drop`;
 
-  } catch (error) {
+  } 
+  
+  catch (error) {
     console.error(error);
 
     cartonDataReady = false;
