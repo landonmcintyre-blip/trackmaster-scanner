@@ -54,8 +54,12 @@ async function loadCartonData() {
 
     cartonDataReady = true;
     startButton.disabled = false;
-    statusBox.textContent =
-      `Ready — ${data.cartons.length} cartons loaded`;
+    const activeDropCartons = data.cartons.filter(
+  carton => carton.dropId === activeDropId
+);
+
+statusBox.textContent =
+  `Ready — ${activeDropCartons.length} cartons for this drop`;
 
   } catch (error) {
     console.error(error);
