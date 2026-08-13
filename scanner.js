@@ -10,6 +10,62 @@ const urlParams = new URLSearchParams(window.location.search);
 const activeDropId = urlParams.get("drop");
 
 dropIdBox.textContent = activeDropId || "Not provided";
+const API_URL =
+  "https://script.google.com/macros/s/AKfycbwVuvB6tfS4qUUarTiCr1EFaeAINjyWcw0IBfc8nUDrfgDKNy1tZ7BkJzUokC8ShKJiAw/exec";
+
+const shippingEvent =
+  activeDropId?.split("-")[0] || "";
+
+let cartonLookup = new Map();
+let cartonDataReady = false;
+
+startButton.disabled = true;
+statusBox.textContent = "Loading carton data...";
+
+loadCartonData();
+
+
+async function loadCartonData() {
+  try {
+    if (!activeDropId || !shippingEvent) {
+      throw new Error("No active drop was provided.");
+    }
+
+    const response = await fetch(
+      `${API_URL}?shippingEvent=${encodeURIComponent(shippingEvent)}`
+    );
+
+    if (!response.ok) {
+      throw new Error("Could not reach carton data.");
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || "Carton data failed to load.");
+    }
+
+    cartonLookup = new Map(
+      data.cartons.map(carton => [
+        carton.cartonNumber.toUpperCase(),
+        carton
+      ])
+    );
+
+    cartonDataReady = true;
+    startButton.disabled = false;
+    statusBox.textContent =
+      `Ready — ${data.cartons.length} cartons loaded`;
+
+  } catch (error) {
+    console.error(error);
+
+    cartonDataReady = false;
+    startButton.disabled = true;
+    statusBox.textContent =
+      error.message || "Unable to load carton data.";
+  }
+}
 
 const codeReader = new ZXing.BrowserMultiFormatReader();
 
