@@ -4,6 +4,12 @@ const resultBox = document.getElementById("scan-result");
 const countBox = document.getElementById("scan-count");
 const startButton = document.getElementById("start-button");
 const exitButton = document.getElementById("exit-button");
+const dropIdBox = document.getElementById("drop-id");
+
+const urlParams = new URLSearchParams(window.location.search);
+const activeDropId = urlParams.get("drop");
+
+dropIdBox.textContent = activeDropId || "Not provided";
 
 const codeReader = new ZXing.BrowserMultiFormatReader();
 
@@ -137,7 +143,13 @@ function exitScanner() {
 
   if (audioContext) {
     audioContext.close();
+    audioContext = null;
   }
+
+  setTimeout(() => {
+    window.history.back();
+  }, 100);
+}
 
   if (window.history.length > 1) {
     window.history.back();
