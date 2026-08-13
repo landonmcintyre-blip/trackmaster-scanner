@@ -81,8 +81,11 @@ statusBox.textContent =
   }
 }
 
-const codeReader = new ZXing.BrowserMultiFormatReader();
+const hints = new Map();
+hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
+const codeReader =
+  new ZXing.BrowserMultiFormatReader(hints);
 let scanCount = 0;
 let lastCode = "";
 let lastScanTime = 0;
