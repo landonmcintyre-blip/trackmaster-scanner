@@ -185,6 +185,34 @@ function updateProgress(totalCartons) {
       ? "0 cartons remaining — DROP COMPLETE"
       : `${remaining} cartons remaining`;
 }
+
+async function saveSuccessfulScan(cartonNumber) {
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify({
+      action: "successfulScan",
+      shippingEvent: shippingEvent,
+      dropId: activeDropId,
+      cartonNumber: cartonNumber
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not save the scan.");
+  }
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.error || "Could not save the scan.");
+  }
+
+  return data;
+}
+
 function handleScan(rawValue) {
   if (!cartonDataReady || !scannerRunning) {
     return;
