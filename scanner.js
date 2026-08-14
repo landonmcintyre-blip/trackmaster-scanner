@@ -8,8 +8,7 @@ const remainingBox =
   document.getElementById("remaining-count");
 
 const urlParams = new URLSearchParams(window.location.search);
-const activeDropId = urlParams.get("drop");
-
+const activeDropId = urlParams.get("dropId");
 dropIdBox.textContent = activeDropId || "Not provided";
 const API_URL =
   "https://script.google.com/macros/s/AKfycbwVuvB6tfS4qUUarTiCr1EFaeAINjyWcw0IBfc8nUDrfgDKNy1tZ7BkJzUokC8ShKJiAw/exec";
