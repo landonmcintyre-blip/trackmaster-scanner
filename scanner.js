@@ -213,7 +213,7 @@ async function saveSuccessfulScan(cartonNumber) {
   return data;
 }
 
-function handleScan(rawValue) {
+asunc function handleScan(rawValue) {
   if (!cartonDataReady || !scannerRunning) {
     return;
   }
@@ -276,33 +276,22 @@ if (scannedCartons.has(barcode)) {
     return;
   }
 
+  try {
+  statusBox.textContent = `Saving: ${barcode}...`;
+
+  await saveSuccessfulScan(barcode);
+
   scannedCartons.add(barcode);
-  scanCount += 1;
+  scanCount = scannedCartons.size;
+
+  const totalCartons = [...cartonLookup.values()]
+    .filter(carton => carton.dropId === activeDropId)
+    .length;
 
   resultBox.textContent = barcode;
-  countBox.textContent = scanCount;
   statusBox.textContent = `Correct: ${barcode}`;
-function playDuplicateBeep() {
-  if (!audioContext) return;
 
-  const oscillator = audioContext.createOscillator();
-  const gain = audioContext.createGain();
-
-  oscillator.connect(gain);
-  gain.connect(audioContext.destination);
-
-  oscillator.frequency.value = 350;
-  oscillator.type = "square";
-
-  gain.gain.setValueAtTime(0.15, audioContext.currentTime);
-  gain.gain.exponentialRampToValueAtTime(
-    0.01,
-    audioContext.currentTime + 0.25
-  );
-
-  oscillator.start();
-  oscillator.stop(audioContext.currentTime + 0.25);
-}
+  updateProgress(totalCartons);
   playBeep();
 
   if (navigator.vibrate) {
@@ -314,6 +303,12 @@ function playDuplicateBeep() {
   setTimeout(() => {
     document.body.classList.remove("scan-success");
   }, 250);
+
+} catch (error) {
+  hardStop(
+    "SCAN NOT SAVED",
+    `${barcode}\n\n${error.message}`
+  );
 }
 
 
