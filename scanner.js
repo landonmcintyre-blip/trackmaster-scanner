@@ -53,6 +53,7 @@ async function loadCartonData() {
 
     cartonDataReady = true;
     startButton.disabled = false;
+    startButton.textContent = "Resume Scanning";
     const activeDropCartons = data.cartons.filter(
   carton => carton.dropId === activeDropId
 );
