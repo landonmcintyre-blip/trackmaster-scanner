@@ -295,7 +295,7 @@ async function handleScan(rawValue) {
   return;
 }
   }
-if (scannedCartons.has(barcode) {
+if (scannedCartons.has(barcode)) {
   statusBox.textContent =
     `Already scanned: ${barcode}`;
 
