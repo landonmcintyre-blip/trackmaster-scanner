@@ -57,6 +57,24 @@ async function loadCartonData() {
     const activeDropCartons = data.cartons.filter(
   carton => carton.dropId === activeDropId
 );
+    const activeDropNumbers = new Set(
+  activeDropCartons.map(carton =>
+    carton.cartonNumber.toUpperCase()
+  )
+);
+
+scannedCartons.clear();
+
+(data.scannedCartons || []).forEach(cartonNumber => {
+  const normalized = cartonNumber.toUpperCase();
+
+  if (activeDropNumbers.has(normalized)) {
+    scannedCartons.add(normalized);
+  }
+});
+
+scanCount = scannedCartons.size;
+updateProgress(activeDropCartons.length);
 
     const rawDropName =
   activeDropCartons[0]?.customer || "Unknown stop";
@@ -153,7 +171,18 @@ async function startScanner() {
       error.message || "Unable to start the camera.";
   }
 }
+function updateProgress(totalCartons) {
+  const scanned = scannedCartons.size;
+  const remaining = Math.max(totalCartons - scanned, 0);
 
+  countBox.textContent =
+    `${scanned} of ${totalCartons} cartons scanned`;
+
+  remainingBox.textContent =
+    remaining === 0
+      ? "0 cartons remaining — DROP COMPLETE"
+      : `${remaining} cartons remaining`;
+}
 function handleScan(rawValue) {
   if (!cartonDataReady || !scannerRunning) {
     return;
