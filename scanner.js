@@ -54,7 +54,7 @@ async function loadCartonData() {
 
     cartonDataReady = true;
     startButton.disabled = false;
-    startButton.textContent = "Resume Scanning";
+    startButton.textContent = "Start Scanner";
     const activeDropCartons = data.cartons.filter(
   carton => carton.dropId === activeDropId
 );
@@ -346,7 +346,7 @@ function hardStop(title, message) {
 
   // Allow the driver to restart after acknowledging the warning.
   startButton.disabled = false;
-startButton.textContent = "Resume Scanning";
+startButton.textContent = "Start Scanner";
   
   document.body.classList.remove("scan-success");
   document.body.classList.add("scan-error");
