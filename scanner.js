@@ -294,7 +294,7 @@ async function handleScan(rawValue) {
   );
   return;
 }
-  }
+  
 if (scannedCartons.has(barcode)) {
   statusBox.textContent =
     `Already scanned: ${barcode}`;
@@ -364,7 +364,31 @@ startButton.textContent = "Resume Scanning";
     );
   }, 100);
 }
+function playDuplicateBeep() {
+  if (!audioContext) return;
 
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+
+  oscillator.frequency.value = 350;
+  oscillator.type = "square";
+
+  gain.gain.setValueAtTime(
+    0.15,
+    audioContext.currentTime
+  );
+
+  gain.gain.exponentialRampToValueAtTime(
+    0.01,
+    audioContext.currentTime + 0.25
+  );
+
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.25);
+}
 function playBeep() {
   if (!audioContext) return;
 
