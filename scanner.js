@@ -236,7 +236,7 @@ async function saveSuccessfulScan(cartonNumber) {
   return data;
 }
 
-asunc function handleScan(rawValue) {
+async function handleScan(rawValue) {
   if (!cartonDataReady || !scannerRunning) {
     return;
   }
@@ -295,7 +295,7 @@ asunc function handleScan(rawValue) {
   return;
 }
   }
-if (scannedCartons.has(barcode)) {
+if (scannedCartons.has(barcode) {
   statusBox.textContent =
     `Already scanned: ${barcode}`;
 
@@ -303,14 +303,6 @@ if (scannedCartons.has(barcode)) {
   playDuplicateBeep();
   return;
 }
-  // Already accepted during this scanner session.
-  if (scannedCartons.has(barcode)) {
-    statusBox.textContent =
-      `Already scanned: ${barcode}`;
-
-    resultBox.textContent = barcode;
-    return;
-  }
 
   try {
   statusBox.textContent = `Saving: ${barcode}...`;
@@ -346,7 +338,7 @@ if (scannedCartons.has(barcode)) {
     `${barcode}\n\n${error.message}`
   );
 }
-
+}
 
 function hardStop(title, message) {
   codeReader.reset();
@@ -354,7 +346,8 @@ function hardStop(title, message) {
 
   // Allow the driver to restart after acknowledging the warning.
   startButton.disabled = false;
-
+startButton.textContent = "Resume Scanning";
+  
   document.body.classList.remove("scan-success");
   document.body.classList.add("scan-error");
 
@@ -396,4 +389,25 @@ function playBeep() {
 
   oscillator.start();
   oscillator.stop(audioContext.currentTime + 0.12);
+}
+function playDuplicateBeep() {
+  if (!audioContext) return;
+
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+
+  oscillator.frequency.value = 350;
+  oscillator.type = "square";
+
+  gain.gain.setValueAtTime(0.15, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(
+    0.01,
+    audioContext.currentTime + 0.25
+  );
+
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.25);
 }
