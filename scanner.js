@@ -185,7 +185,31 @@ function updateProgress(totalCartons) {
       ? "0 cartons remaining — DROP COMPLETE"
       : `${remaining} cartons remaining`;
 }
-
+async function saveScanException(
+  cartonNumber,
+  exceptionType,
+  notes
+) {
+  try {
+    await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "exception",
+        shippingEvent: shippingEvent,
+        dropId: activeDropId,
+        cartonNumber: cartonNumber,
+        exceptionType: exceptionType,
+        notes: notes
+      }),
+      keepalive: true
+    });
+  } catch (error) {
+    console.error("Exception could not be logged:", error);
+  }
+}
 async function saveSuccessfulScan(cartonNumber) {
   const response = await fetch(API_URL, {
     method: "POST",
@@ -244,20 +268,33 @@ asunc function handleScan(rawValue) {
 
   // Correct format, but not present anywhere on this truck.
   if (!carton) {
-    hardStop(
-      "UNKNOWN CARTON",
-      `${barcode}\n\nThis carton is not assigned to this shipping event.`
-    );
-    return;
-  }
+  saveScanException(
+    barcode,
+    "Wrong Route",
+    `Carton scanned at ${activeDropId}, but it is not assigned to Shipping Event ${shippingEvent}.`
+  );
+
+  hardStop(
+    "WRONG ROUTE",
+    `${barcode}\n\nThis carton is not assigned to this route.`
+  );
+  return;
+}
 
   // It exists on the truck, but belongs at another stop.
   if (carton.dropId !== activeDropId) {
-    hardStop(
-      "WRONG DROP",
-      `${barcode} belongs to Drop ${carton.dropNumber}\n${carton.customer}`
-    );
-    return;
+  saveScanException(
+    barcode,
+    "Wrong Drop",
+    `Scanned at ${activeDropId}; assigned to ${carton.dropId}, Drop ${carton.dropNumber}, ${carton.customer}.`
+  );
+
+  hardStop(
+    "WRONG DROP",
+    `${barcode} belongs to Drop ${carton.dropNumber}\n${carton.customer}`
+  );
+  return;
+}
   }
 if (scannedCartons.has(barcode)) {
   statusBox.textContent =
