@@ -4,6 +4,8 @@ const resultBox = document.getElementById("scan-result");
 const countBox = document.getElementById("scan-count");
 const startButton = document.getElementById("start-button");
 const dropIdBox = document.getElementById("drop-id");
+const remainingBox =
+  document.getElementById("remaining-count");
 
 const urlParams = new URLSearchParams(window.location.search);
 const activeDropId = urlParams.get("drop");
