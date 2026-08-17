@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=23">
+  <link rel="stylesheet" href="style.css?v=24.2">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -61,7 +61,6 @@
     <section id="route-picker-page" class="route-page" hidden>
       <header class="app-header">
         <div>
-          <div class="brand">TRACKMASTER</div>
           <h1>Today’s Routes</h1>
           <div id="driver-welcome" class="route-meta"></div>
         </div>
@@ -92,7 +91,6 @@
           <button id="my-routes-button" class="my-routes-button" type="button">
             ← My Routes
           </button>
-          <div class="brand">TRACKMASTER</div>
           <h1 id="route-name">Loading route…</h1>
           <div id="route-meta" class="route-meta"></div>
         </div>
@@ -120,6 +118,26 @@
       </button>
     </section>
 
+    <section id="drop-overview-page" class="drop-overview-page" hidden>
+      <header class="scanner-header">
+        <button id="overview-back-to-route" class="back-button" type="button">
+          ← Route
+        </button>
+
+        <div>
+          <span class="summary-label">Drop overview</span>
+          <h1 id="overview-drop-name">Select a drop</h1>
+        </div>
+      </header>
+
+      <button id="overview-scan-button" class="primary-button" type="button">
+        Start Scanner
+      </button>
+
+      <div id="overview-progress" class="overview-progress"></div>
+      <section id="overview-carton-list" class="carton-list"></section>
+    </section>
+
     <section id="scanner-page" class="scanner-page" hidden>
       <header class="scanner-header">
         <button id="back-to-route" class="back-button" type="button">
@@ -131,6 +149,10 @@
           <h1 id="drop-id">Not provided</h1>
         </div>
       </header>
+
+      <button id="scanner-overview-button" class="secondary-button compact-button" type="button">
+        Drop Overview
+      </button>
 
       <section class="scanner-window">
         <video id="camera" playsinline></video>
@@ -172,7 +194,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=23"></script>
+  <script src="scanner.js?v=24.2"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

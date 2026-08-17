@@ -18,6 +18,18 @@ const refreshAssignedRoutesButton = document.getElementById(
 const myRoutesButton = document.getElementById("my-routes-button");
 const signOutButtons = document.querySelectorAll(".sign-out-button");
 const routePage = document.getElementById("route-page");
+const dropOverviewPage = document.getElementById("drop-overview-page");
+const overviewBackToRouteButton = document.getElementById(
+  "overview-back-to-route"
+);
+const overviewDropName = document.getElementById("overview-drop-name");
+const overviewScanButton = document.getElementById(
+  "overview-scan-button"
+);
+const overviewProgress = document.getElementById("overview-progress");
+const overviewCartonList = document.getElementById(
+  "overview-carton-list"
+);
 const scannerPage = document.getElementById("scanner-page");
 const routeNameBox = document.getElementById("route-name");
 const routeMetaBox = document.getElementById("route-meta");
@@ -27,6 +39,9 @@ const networkStatusBox = document.getElementById("network-status");
 const pendingSyncBox = document.getElementById("pending-sync");
 const refreshRouteButton = document.getElementById("refresh-route-button");
 const backToRouteButton = document.getElementById("back-to-route");
+const scannerOverviewButton = document.getElementById(
+  "scanner-overview-button"
+);
 const video = document.getElementById("camera");
 const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("scan-result");
@@ -71,6 +86,8 @@ const ROUTE_CACHE_KEY =
   `trackmaster-route-${shippingEvent || "missing"}`;
 const ACCEPTED_KEY =
   `trackmaster-accepted-${shippingEvent || "missing"}`;
+const MISSING_KEY =
+  `trackmaster-missing-${shippingEvent || "missing"}`;
 
 let activeDropId = requestedDropId;
 let routeData = null;
@@ -170,6 +187,13 @@ signOutButtons.forEach(button => {
 startButton.addEventListener("click", startScanner);
 flashlightButton.addEventListener("click", toggleFlashlight);
 backToRouteButton.addEventListener("click", showRoutePage);
+overviewBackToRouteButton.addEventListener("click", showRoutePage);
+overviewScanButton.addEventListener("click", () => {
+  if (activeDropId) openScannerForDrop(activeDropId, true);
+});
+scannerOverviewButton.addEventListener("click", () => {
+  if (activeDropId) openDropOverview(activeDropId);
+});
 refreshRouteButton.addEventListener("click", refreshRouteManually);
 resetButton.addEventListener("click", resetCurrentDropForTesting);
 
@@ -200,6 +224,7 @@ function initializeAuthentication() {
   loginPage.hidden = false;
   routePickerPage.hidden = true;
   routePage.hidden = true;
+  dropOverviewPage.hidden = true;
   scannerPage.hidden = true;
   loginPhone.focus();
 }
@@ -313,6 +338,7 @@ async function loadAssignedRoutes(forceRefresh = false) {
 
   loginPage.hidden = true;
   routePage.hidden = true;
+  dropOverviewPage.hidden = true;
   scannerPage.hidden = true;
   routePickerPage.hidden = false;
   driverWelcome.textContent = driver.driverName
@@ -413,7 +439,8 @@ function displayAssignedRoutes(routes, fromCache) {
       <span class="assigned-route-meta"></span>
     `;
     button.querySelector(".assigned-route-name").textContent =
-      route.routeName || `Shipping Event ${route.shippingEvent}`;
+      formatRouteDisplayName(route.routeName) ||
+      `Shipping Event ${route.shippingEvent}`;
     button.querySelector(".assigned-route-meta").textContent =
       `${route.routeDate || "Today"} · SE ${route.shippingEvent}`;
     button.addEventListener("click", () =>
@@ -539,6 +566,28 @@ function rememberAcceptedCarton(cartonNumber) {
   writeStoredJson(ACCEPTED_KEY, [...accepted]);
 }
 
+function getMissingCartons() {
+  return new Set(
+    readStoredJson(MISSING_KEY, []).map(value =>
+      String(value).trim().toUpperCase()
+    )
+  );
+}
+
+function rememberMissingCarton(cartonNumber) {
+  const missing = getMissingCartons();
+  missing.add(String(cartonNumber).trim().toUpperCase());
+  writeStoredJson(MISSING_KEY, [...missing]);
+}
+
+function forgetMissingCarton(cartonNumber) {
+  const normalized = String(cartonNumber).trim().toUpperCase();
+  const missing = [...getMissingCartons()].filter(
+    value => value !== normalized
+  );
+  writeStoredJson(MISSING_KEY, missing);
+}
+
 function clearLocalDropScanData() {
   const cachedData = routeData || readStoredJson(ROUTE_CACHE_KEY, null);
   const dropCartonNumbers = new Set(
@@ -558,6 +607,11 @@ function clearLocalDropScanData() {
 
     writeStoredJson(ACCEPTED_KEY, accepted);
 
+    const missing = [...getMissingCartons()].filter(
+      cartonNumber => !dropCartonNumbers.has(cartonNumber)
+    );
+    writeStoredJson(MISSING_KEY, missing);
+
     cachedData.scannedCartons =
       (cachedData.scannedCartons || [])
         .map(value => String(value).trim().toUpperCase())
@@ -569,6 +623,7 @@ function clearLocalDropScanData() {
     routeData = cachedData;
   } else {
     localStorage.removeItem(ACCEPTED_KEY);
+    localStorage.removeItem(MISSING_KEY);
   }
 
   const queue = readStoredJson(SYNC_QUEUE_KEY, []);
@@ -686,13 +741,36 @@ function queueRecord(record) {
 }
 
 function queueSuccessfulScan(cartonNumber) {
-  rememberAcceptedCarton(cartonNumber);
+  const normalizedCartonNumber = String(cartonNumber)
+    .trim()
+    .toUpperCase();
+  const wasReportedMissing =
+    getMissingCartons().has(normalizedCartonNumber);
+
+  forgetMissingCarton(normalizedCartonNumber);
+  rememberAcceptedCarton(normalizedCartonNumber);
+
+  if (wasReportedMissing) {
+    const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+    const driverLabel =
+      driver?.driverName || driver?.driverId || "Unknown driver";
+
+    queueRecord({
+      action: "exception",
+      shippingEvent,
+      dropId: activeDropId,
+      cartonNumber: normalizedCartonNumber,
+      exceptionType: "Missing Item Found",
+      notes:
+        `${driverLabel} scanned a carton previously reported missing.`
+    });
+  }
 
   queueRecord({
     action: "successfulScan",
     shippingEvent,
     dropId: activeDropId,
-    cartonNumber
+    cartonNumber: normalizedCartonNumber
   });
 
   syncPendingRecords();
@@ -908,6 +986,11 @@ function applyRouteData(data) {
 function showRequestedStartingScreen() {
   const requestedScreen = urlParams.get("screen");
 
+  if (requestedScreen === "overview" && activeDropId) {
+    openDropOverview(activeDropId);
+    return;
+  }
+
   if (requestedScreen === "scan" && activeDropId) {
     openScannerForDrop(activeDropId);
     return;
@@ -920,6 +1003,7 @@ function showRoutePage() {
   stopScanner();
   document.body.classList.remove("scan-success", "scan-error");
   scannerPage.hidden = true;
+  dropOverviewPage.hidden = true;
   routePage.hidden = false;
   renderRoutePage();
 
@@ -929,11 +1013,12 @@ function showRoutePage() {
   window.history.replaceState({}, "", routeUrl.toString());
 }
 
-function openScannerForDrop(dropId) {
+function openScannerForDrop(dropId, openCamera = false) {
   activeDropId = dropId;
   applyActiveDropData();
 
   routePage.hidden = true;
+  dropOverviewPage.hidden = true;
   scannerPage.hidden = false;
   document.body.classList.remove("scan-success", "scan-error");
 
@@ -942,6 +1027,26 @@ function openScannerForDrop(dropId) {
   scannerUrl.searchParams.set("dropId", activeDropId);
   scannerUrl.searchParams.set("screen", "scan");
   window.history.replaceState({}, "", scannerUrl.toString());
+  window.scrollTo(0, 0);
+
+  if (openCamera) {
+    startScanner();
+  }
+}
+
+function openDropOverview(dropId) {
+  stopScanner();
+  activeDropId = dropId;
+  routePage.hidden = true;
+  scannerPage.hidden = true;
+  dropOverviewPage.hidden = false;
+  renderDropOverview();
+
+  const overviewUrl = new URL(window.location.href);
+  overviewUrl.searchParams.set("shippingEvent", shippingEvent);
+  overviewUrl.searchParams.set("dropId", activeDropId);
+  overviewUrl.searchParams.set("screen", "overview");
+  window.history.replaceState({}, "", overviewUrl.toString());
   window.scrollTo(0, 0);
 }
 
@@ -992,7 +1097,7 @@ function renderRoutePage() {
   if (!routeData?.cartons?.length) return;
 
   const routeName =
-    String(routeData.routeName || "").trim() ||
+    formatRouteDisplayName(routeData.routeName) ||
     `Shipping Event ${shippingEvent}`;
 
   routeNameBox.textContent = routeName;
@@ -1030,6 +1135,7 @@ function renderRoutePage() {
   });
 
   const knownAccepted = getKnownAcceptedCartons();
+  const missingCartons = getMissingCartons();
   const drops = [...dropMap.values()]
     .map(drop => {
       const scannedCount = drop.cartons.filter(carton =>
@@ -1037,19 +1143,38 @@ function renderRoutePage() {
           String(carton.cartonNumber).trim().toUpperCase()
         )
       ).length;
-      const complete = scannedCount === drop.cartons.length;
-      const started = scannedCount > 0 && !complete;
+      const missingCount = drop.cartons.filter(carton =>
+        {
+          const cartonNumber = String(carton.cartonNumber)
+            .trim()
+            .toUpperCase();
+          return (
+            missingCartons.has(cartonNumber) &&
+            !knownAccepted.has(cartonNumber)
+          );
+        }
+      ).length;
+      const complete =
+        scannedCount === drop.cartons.length && missingCount === 0;
+      const completeWithException =
+        !complete &&
+        scannedCount + missingCount === drop.cartons.length;
+      const finished = complete || completeWithException;
+      const started = (scannedCount > 0 || missingCount > 0) && !finished;
 
       return {
         ...drop,
         scannedCount,
+        missingCount,
         complete,
+        completeWithException,
+        finished,
         started
       };
     })
     .sort((a, b) => {
       const rank = drop =>
-        drop.started ? 0 : drop.complete ? 2 : 1;
+        drop.started ? 0 : drop.finished ? 2 : 1;
 
       return rank(a) - rank(b) || a.dropNumber - b.dropNumber;
     });
@@ -1057,61 +1182,223 @@ function renderRoutePage() {
   dropListBox.replaceChildren();
 
   drops.forEach(drop => {
-    const card = document.createElement("button");
-    const top = document.createElement("div");
+    const card = document.createElement("article");
+    const details = document.createElement("div");
     const number = document.createElement("span");
     const progress = document.createElement("span");
-    const customer = document.createElement("div");
-    const otherCustomers = document.createElement("div");
+    const customers = document.createElement("div");
     const cartonTypes = document.createElement("div");
+    const actions = document.createElement("div");
+    const scanButton = document.createElement("button");
+    const overviewButton = document.createElement("button");
 
-    card.type = "button";
     card.className = "drop-card";
 
     if (drop.complete) card.classList.add("complete");
+    if (drop.completeWithException) {
+      card.classList.add("complete-with-exception");
+    }
     if (drop.started) card.classList.add("in-progress");
 
-    card.addEventListener("click", () =>
-      openScannerForDrop(drop.dropId)
-    );
-
-    top.className = "drop-card-top";
+    details.className = "drop-card-details";
     number.className = "drop-number";
     progress.className = "drop-progress";
-    customer.className = "customer-name";
-    otherCustomers.className = "other-customers";
+    customers.className = "customer-list";
     cartonTypes.className = "carton-types";
+    actions.className = "drop-card-actions";
+    scanButton.className = "drop-action-button scan-drop-button";
+    overviewButton.className = "drop-action-button overview-button";
 
     number.textContent = `Drop ${drop.dropNumber}`;
     progress.textContent = drop.complete
       ? "COMPLETE"
+      : drop.completeWithException
+        ? `COMPLETE · ${drop.missingCount} MISSING`
       : drop.started
-        ? `IN PROGRESS · ${drop.scannedCount}/${drop.cartons.length}`
+        ? `IN PROGRESS · ${drop.scannedCount}/${drop.cartons.length}` +
+          (drop.missingCount ? ` · ${drop.missingCount} MISSING` : "")
         : `${drop.cartons.length} CARTONS`;
-    customer.textContent = drop.customers[0] || "Unknown customer";
-    otherCustomers.textContent = drop.customers.length > 1
-      ? `Also: ${drop.customers.slice(1).join(", ")}`
-      : "";
+
+    (drop.customers.length ? drop.customers : ["Unknown customer"])
+      .forEach(name => {
+        const customer = document.createElement("div");
+        customer.className = "customer-name";
+        customer.textContent = name;
+        customers.append(customer);
+      });
+
     cartonTypes.textContent = formatCartonTypes(drop.cartons);
 
-    top.append(number, progress);
-    card.append(top, customer);
+    overviewButton.type = "button";
+    overviewButton.textContent = "Drop Overview";
+    overviewButton.addEventListener("click", () =>
+      openDropOverview(drop.dropId)
+    );
 
-    if (otherCustomers.textContent) {
-      card.append(otherCustomers);
+    if (!drop.finished) {
+      scanButton.type = "button";
+      scanButton.textContent = drop.started ? "Resume Drop" : "Start Drop";
+      scanButton.addEventListener("click", () =>
+        openScannerForDrop(drop.dropId, true)
+      );
+      actions.append(scanButton);
     }
 
-    card.append(cartonTypes);
+    actions.append(overviewButton);
+    details.append(number, progress, customers, cartonTypes);
+    card.append(details, actions);
     dropListBox.append(card);
   });
 
+  if (!dropOverviewPage.hidden && activeDropId) {
+    renderDropOverview();
+  }
+
   renderPendingSync();
+}
+
+function renderDropOverview() {
+  if (!routeData || !activeDropId) return;
+
+  const cartons = routeData.cartons.filter(
+    carton => carton.dropId === activeDropId
+  );
+
+  if (!cartons.length) return;
+
+  const accepted = getKnownAcceptedCartons();
+  const missing = getMissingCartons();
+  const scannedCount = cartons.filter(carton =>
+    accepted.has(String(carton.cartonNumber).trim().toUpperCase())
+  ).length;
+  const missingCount = cartons.filter(carton =>
+    {
+      const cartonNumber = String(carton.cartonNumber)
+        .trim()
+        .toUpperCase();
+      return missing.has(cartonNumber) && !accepted.has(cartonNumber);
+    }
+  ).length;
+  const customerNames = [...new Set(
+    cartons.map(carton => cleanCustomerName(carton.customer))
+  )];
+  const dropNumber = cartons[0].dropNumber;
+
+  overviewDropName.textContent =
+    `Drop ${dropNumber} · ${customerNames.join(" / ")}`;
+  overviewProgress.textContent =
+    `${scannedCount} scanned · ${missingCount} missing · ` +
+    `${cartons.length - scannedCount - missingCount} remaining`;
+  overviewScanButton.textContent =
+    scannedCount || missingCount ? "Resume Scanner" : "Start Scanner";
+  overviewCartonList.replaceChildren();
+
+  const orderedCartons = [...cartons].sort((a, b) => {
+    const statusRank = carton => {
+      const number = String(carton.cartonNumber).trim().toUpperCase();
+      if (missing.has(number)) return 0;
+      if (!accepted.has(number)) return 1;
+      return 2;
+    };
+
+    return (
+      statusRank(a) - statusRank(b) ||
+      String(a.cartonNumber).localeCompare(String(b.cartonNumber))
+    );
+  });
+
+  orderedCartons.forEach(carton => {
+    const cartonNumber = String(carton.cartonNumber)
+      .trim()
+      .toUpperCase();
+    const isScanned = accepted.has(cartonNumber);
+    const isMissing = missing.has(cartonNumber) && !isScanned;
+    const row = document.createElement("article");
+    const heading = document.createElement("div");
+    const number = document.createElement("strong");
+    const status = document.createElement("span");
+    const type = document.createElement("div");
+    const description = document.createElement("div");
+
+    row.className = "carton-row";
+    if (isScanned) row.classList.add("scanned");
+    if (isMissing) row.classList.add("missing");
+    heading.className = "carton-row-heading";
+    status.className = "carton-status";
+    type.className = "carton-type-detail";
+    description.className = "carton-description";
+
+    number.textContent = cartonNumber;
+    status.textContent = isMissing
+      ? "MISSING"
+      : isScanned
+        ? "SCANNED"
+        : "NOT SCANNED";
+    type.textContent = carton.cartonType || "Carton type unavailable";
+    description.textContent =
+      carton.description || "No description available";
+
+    heading.append(number, status);
+    row.append(heading, type, description);
+
+    if (!isScanned && !isMissing) {
+      const missingButton = document.createElement("button");
+      missingButton.type = "button";
+      missingButton.className = "report-missing-button";
+      missingButton.textContent = "Report Missing From Truck";
+      missingButton.addEventListener("click", () =>
+        reportMissingCarton(carton)
+      );
+      row.append(missingButton);
+    }
+
+    overviewCartonList.append(row);
+  });
+}
+
+function reportMissingCarton(carton) {
+  const cartonNumber = String(carton.cartonNumber)
+    .trim()
+    .toUpperCase();
+  const confirmed = window.confirm(
+    `REPORT MISSING\n\n${cartonNumber}\n\n` +
+    "Confirm this carton is not on the truck."
+  );
+
+  if (!confirmed) return;
+
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+  const driverLabel =
+    driver?.driverName || driver?.driverId || "Unknown driver";
+
+  rememberMissingCarton(cartonNumber);
+  queueScanException(
+    cartonNumber,
+    "Missing From Truck",
+    `${driverLabel} reported carton missing from truck.`
+  );
+  renderDropOverview();
+  renderRoutePage();
 }
 
 function cleanCustomerName(value) {
   return String(value || "Unknown customer")
     .replace(/^.*?\*\s*JOBSITE\s*\*\s*/i, "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatRouteDisplayName(value) {
+  const original = String(value || "").trim();
+
+  if (!original) return "";
+
+  return original
+    .replace(/^AUB\s*-\s*/i, "")
+    .replace(
+      /\s*-\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*-\s*(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day)?\s*$/i,
+      ""
+    )
     .trim();
 }
 
@@ -1207,8 +1494,7 @@ async function startScanner() {
     );
 
     configureCameraControls();
-    statusBox.textContent =
-      "Ready — barcode can face any direction";
+    statusBox.textContent = "Ready — scan carton barcode";
   } catch (error) {
     console.error(error);
     scannerRunning = false;

@@ -247,6 +247,10 @@ h1 {
 }
 
 .drop-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 122px;
+  align-items: stretch;
+  gap: 12px;
   width: 100%;
   padding: 16px;
   border: 2px solid #374151;
@@ -254,11 +258,6 @@ h1 {
   background: #1f2937;
   color: white;
   text-align: left;
-  cursor: pointer;
-}
-
-.drop-card:active {
-  transform: scale(0.99);
 }
 
 .drop-card.complete {
@@ -276,11 +275,13 @@ h1 {
   color: #fed7aa;
 }
 
-.drop-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.drop-card.complete-with-exception {
+  border-color: #ef4444;
+  background: #7f1d1d;
+}
+
+.drop-card-details {
+  min-width: 0;
 }
 
 .drop-number {
@@ -296,16 +297,22 @@ h1 {
 }
 
 .drop-progress {
+  display: block;
+  margin-top: 5px;
   color: #d1d5db;
   font-size: 13px;
   font-weight: 800;
 }
 
 .customer-name {
-  margin: 9px 0 7px;
-  font-size: 21px;
+  margin: 0 0 5px;
+  font-size: 19px;
   font-weight: 900;
   line-height: 1.15;
+}
+
+.customer-list {
+  margin-top: 10px;
 }
 
 .other-customers,
@@ -313,6 +320,119 @@ h1 {
   color: #d1d5db;
   font-size: 14px;
   line-height: 1.4;
+}
+
+.drop-card-actions {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 9px;
+}
+
+.drop-action-button {
+  width: 100%;
+  min-height: 48px;
+  padding: 9px 8px;
+  border: 1px solid #4b5563;
+  border-radius: 10px;
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.15;
+  cursor: pointer;
+}
+
+.scan-drop-button {
+  border-color: #fb923c;
+  background: #ea580c;
+}
+
+.overview-button {
+  background: #374151;
+}
+
+.drop-overview-page {
+  width: 100%;
+  padding: 18px;
+}
+
+.compact-button {
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+}
+
+.overview-progress {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px solid #374151;
+  border-radius: 10px;
+  background: #1f2937;
+  color: #d1d5db;
+  font-weight: 800;
+}
+
+.carton-list {
+  display: grid;
+  gap: 11px;
+}
+
+.carton-row {
+  padding: 14px;
+  border: 2px solid #4b5563;
+  border-radius: 12px;
+  background: #1f2937;
+}
+
+.carton-row.scanned {
+  border-color: #22c55e;
+  background: #14532d;
+}
+
+.carton-row.missing {
+  border-color: #ef4444;
+  background: #7f1d1d;
+}
+
+.carton-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.carton-row-heading strong {
+  font-size: 18px;
+}
+
+.carton-status {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.carton-type-detail {
+  margin-top: 7px;
+  color: #fdba74;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.carton-description {
+  margin-top: 6px;
+  color: #e5e7eb;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.report-missing-button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid #f87171;
+  border-radius: 9px;
+  background: #991b1b;
+  color: white;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 .carton-types {
@@ -501,8 +621,20 @@ body.scan-error .status {
 
 @media (min-width: 700px) {
   .route-page,
-  .scanner-page {
+  .scanner-page,
+  .drop-overview-page {
     padding: 28px;
+  }
+}
+
+@media (max-width: 390px) {
+  .drop-card {
+    grid-template-columns: minmax(0, 1fr) 108px;
+    padding: 13px;
+  }
+
+  .drop-action-button {
+    font-size: 11px;
   }
 }
 
