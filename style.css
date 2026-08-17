@@ -294,6 +294,10 @@ h1 {
   background: black;
 }
 
+.scanner-layout {
+  display: block;
+}
+
 #camera {
   width: 100%;
   height: 100%;
@@ -351,6 +355,38 @@ h1 {
 
 .flashlight-button:active {
   transform: scale(0.95);
+}
+
+.rotate-device-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  background: rgb(17 24 39 / 92%);
+  color: white;
+  text-align: center;
+}
+
+.rotate-device-overlay strong {
+  font-size: 21px;
+}
+
+.rotate-device-overlay > span:last-child {
+  color: #d1d5db;
+  font-size: 14px;
+}
+
+.rotate-device-icon {
+  color: #f97316;
+  font-size: 58px;
+  font-weight: 900;
+  line-height: 1;
+  transform: rotate(90deg);
 }
 
 .status {
@@ -424,6 +460,12 @@ body.scan-error .status {
   }
 }
 
+@media (orientation: portrait) {
+  .scanner-page:not([hidden]) .rotate-device-overlay {
+    display: flex;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 650px) {
   .app-shell {
     max-width: none;
@@ -438,16 +480,28 @@ body.scan-error .status {
     margin-bottom: 8px;
   }
 
+  .scanner-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 285px);
+    gap: 12px;
+    align-items: start;
+  }
+
   .scanner-header .summary-label {
     display: none;
   }
 
   .scanner-window {
-    width: min(100%, 900px);
-    height: 68dvh;
+    width: 100%;
+    height: calc(100dvh - 86px);
     min-height: 250px;
     margin: 0 auto;
     aspect-ratio: auto;
+  }
+
+  .scanner-controls {
+    max-height: calc(100dvh - 86px);
+    overflow-y: auto;
   }
 
   .scanner-guide {
@@ -456,8 +510,35 @@ body.scan-error .status {
 
   .status {
     min-height: 46px;
-    margin: 8px 0;
+    margin: 0 0 8px;
     padding: 11px;
     font-size: 16px;
+  }
+
+  .primary-button,
+  .test-reset-button {
+    padding: 12px;
+  }
+
+  .test-reset-button {
+    margin-top: 8px;
+  }
+
+  .results {
+    margin-top: 8px;
+    padding: 10px;
+  }
+
+  .results h2 {
+    margin: 8px 0 4px;
+    font-size: 12px;
+  }
+
+  #scan-result {
+    font-size: 22px;
+  }
+
+  #scan-count {
+    font-size: 24px;
   }
 }

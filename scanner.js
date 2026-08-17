@@ -73,61 +73,6 @@ const hints = new Map();
 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
 const codeReader = new ZXing.BrowserMultiFormatReader(hints);
-codeReader.timeBetweenDecodingAttempts = 80;
-
-let rotateNextScanFrame = false;
-
-codeReader.drawFrameOnCanvas = function (
-  source,
-  dimensions,
-  suppliedContext
-) {
-  const context = suppliedContext || this.captureCanvasContext;
-  const canvas = context.canvas;
-  const sourceWidth = source.videoWidth;
-  const sourceHeight = source.videoHeight;
-  const rotateFrame = rotateNextScanFrame;
-
-  rotateNextScanFrame = !rotateNextScanFrame;
-
-  if (!sourceWidth || !sourceHeight) return;
-
-  const targetWidth = rotateFrame ? sourceHeight : sourceWidth;
-  const targetHeight = rotateFrame ? sourceWidth : sourceHeight;
-
-  if (
-    canvas.width !== targetWidth ||
-    canvas.height !== targetHeight
-  ) {
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-  }
-
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (rotateFrame) {
-    context.translate(canvas.width / 2, canvas.height / 2);
-    context.rotate(Math.PI / 2);
-    context.drawImage(
-      source,
-      -sourceWidth / 2,
-      -sourceHeight / 2,
-      sourceWidth,
-      sourceHeight
-    );
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    return;
-  }
-
-  context.drawImage(
-    source,
-    0,
-    0,
-    sourceWidth,
-    sourceHeight
-  );
-};
 
 startButton.disabled = true;
 refreshRouteButton.disabled = !navigator.onLine;
@@ -874,8 +819,6 @@ async function startScanner() {
   document.body.classList.remove("scan-error");
   if (scannerRunning || !activeDropId) return;
 
-  rotateNextScanFrame = false;
-
   audioContext = audioContext || new (
     window.AudioContext || window.webkitAudioContext
   )();
@@ -929,7 +872,7 @@ async function startScanner() {
 
     configureCameraControls();
     statusBox.textContent =
-      "Ready — barcode can face any direction";
+      "Ready — hold phone sideways and scan carton tag";
   } catch (error) {
     console.error(error);
     scannerRunning = false;
@@ -1006,7 +949,6 @@ function stopScanner() {
   }
 
   resetCameraControls();
-  rotateNextScanFrame = false;
   scannerRunning = false;
   startButton.disabled = !cartonDataReady;
   startButton.textContent = "Start Scanner";
