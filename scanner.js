@@ -270,43 +270,72 @@ function queueScanException(cartonNumber, exceptionType, notes) {
 async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
 
+  const submittedQueue =
+    readStoredJson(SYNC_QUEUE_KEY, []);
+
+  if (
+    !Array.isArray(submittedQueue) ||
+    !submittedQueue.length
+  ) {
+    return;
+  }
+
   syncRunning = true;
 
   try {
-    let queue = readStoredJson(SYNC_QUEUE_KEY, []);
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "syncBatch",
+        records: submittedQueue
+      }),
+      keepalive: true
+    });
 
-    while (queue.length) {
-      const record = queue[0];
-
-      try {
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "text/plain;charset=utf-8"
-          },
-          body: JSON.stringify(record),
-          keepalive: true
-        });
-
-        if (!response.ok) {
-          throw new Error("Sync request failed.");
-        }
-
-        const data = await response.json();
-
-        if (!data.success) {
-          throw new Error(data.error || "Sync was rejected.");
-        }
-
-        queue.shift();
-        writeStoredJson(SYNC_QUEUE_KEY, queue);
-      } catch (error) {
-        console.error("TrackMaster sync paused:", error);
-        break;
-      }
+    if (!response.ok) {
+      throw new Error("Batch sync request failed.");
     }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(
+        data.error || "Batch sync was rejected."
+      );
+    }
+
+    const submittedIds = new Set(
+      submittedQueue.map(record => record.id)
+    );
+
+    const latestQueue =
+      readStoredJson(SYNC_QUEUE_KEY, []);
+
+    const remainingQueue = latestQueue.filter(
+      record => !submittedIds.has(record.id)
+    );
+
+    writeStoredJson(
+      SYNC_QUEUE_KEY,
+      remainingQueue
+    );
+  } catch (error) {
+    console.error(
+      "TrackMaster batch sync paused:",
+      error
+    );
   } finally {
     syncRunning = false;
+
+    if (
+      navigator.onLine &&
+      readStoredJson(SYNC_QUEUE_KEY, []).length
+    ) {
+      setTimeout(syncPendingRecords, 0);
+    }
   }
 }
 
