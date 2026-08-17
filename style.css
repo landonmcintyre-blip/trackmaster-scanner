@@ -149,6 +149,50 @@ h1 {
   color: #ffedd5;
 }
 
+.header-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.sign-out-button {
+  padding: 7px 10px;
+  border: 1px solid #4b5563;
+  border-radius: 9px;
+  background: transparent;
+  color: #d1d5db;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.assigned-route-card {
+  width: 100%;
+  padding: 18px;
+  border: 2px solid #374151;
+  border-radius: 14px;
+  background: #1f2937;
+  color: #f9fafb;
+  text-align: left;
+  cursor: pointer;
+}
+
+.assigned-route-card:active {
+  transform: scale(0.99);
+}
+
+.assigned-route-name {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 21px;
+  font-weight: 900;
+}
+
+.assigned-route-meta {
+  color: #d1d5db;
+  font-size: 14px;
+}
+
 .route-summary {
   display: flex;
   align-items: center;

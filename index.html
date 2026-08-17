@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=20">
+  <link rel="stylesheet" href="style.css?v=21">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -58,6 +58,34 @@
       </div>
     </section>
 
+    <section id="route-picker-page" class="route-page" hidden>
+      <header class="app-header">
+        <div>
+          <div class="brand">TRACKMASTER</div>
+          <h1>Today’s Routes</h1>
+          <div id="driver-welcome" class="route-meta"></div>
+        </div>
+
+        <button class="sign-out-button" type="button">
+          Sign Out
+        </button>
+      </header>
+
+      <div id="route-picker-message" class="route-message">
+        Finding your assigned routes…
+      </div>
+
+      <section id="assigned-route-list" class="drop-list"></section>
+
+      <button
+        id="refresh-assigned-routes"
+        class="secondary-button"
+        type="button"
+      >
+        Refresh Assigned Routes
+      </button>
+    </section>
+
     <section id="route-page" class="route-page" hidden>
       <header class="app-header">
         <div>
@@ -66,9 +94,14 @@
           <div id="route-meta" class="route-meta"></div>
         </div>
 
-        <span id="network-status" class="network-status">
-          Checking…
-        </span>
+        <div class="header-actions">
+          <span id="network-status" class="network-status">
+            Checking…
+          </span>
+          <button class="sign-out-button" type="button">
+            Sign Out
+          </button>
+        </div>
       </header>
 
       <button
@@ -152,7 +185,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=20"></script>
+  <script src="scanner.js?v=21"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

@@ -4,6 +4,18 @@ const loginPhone = document.getElementById("login-phone");
 const loginPin = document.getElementById("login-pin");
 const loginButton = document.getElementById("login-button");
 const loginMessage = document.getElementById("login-message");
+const routePickerPage = document.getElementById("route-picker-page");
+const driverWelcome = document.getElementById("driver-welcome");
+const routePickerMessage = document.getElementById(
+  "route-picker-message"
+);
+const assignedRouteList = document.getElementById(
+  "assigned-route-list"
+);
+const refreshAssignedRoutesButton = document.getElementById(
+  "refresh-assigned-routes"
+);
+const signOutButtons = document.querySelectorAll(".sign-out-button");
 const routePage = document.getElementById("route-page");
 const scannerPage = document.getElementById("scanner-page");
 const routeNameBox = document.getElementById("route-name");
@@ -39,6 +51,7 @@ const API_URL =
 const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
+const SAVED_PHONE_KEY = "trackmaster-saved-phone";
 
 const urlParams = new URLSearchParams(window.location.search);
 const requestedDropId = String(urlParams.get("dropId") || "").trim();
@@ -49,10 +62,13 @@ const rememberedShippingEvent = String(
   localStorage.getItem(LAST_ROUTE_KEY) || ""
 ).trim();
 
-const shippingEvent =
+const linkedShippingEvent =
   requestedShippingEvent ||
-  requestedDropId.split("-")[0] ||
-  rememberedShippingEvent;
+  requestedDropId.split("-")[0];
+
+const shippingEvent =
+  linkedShippingEvent ||
+  (!navigator.onLine ? rememberedShippingEvent : "");
 
 const ROUTE_CACHE_KEY =
   `trackmaster-route-${shippingEvent || "missing"}`;
@@ -146,6 +162,13 @@ loginPhone.addEventListener("input", formatLoginPhone);
 loginPin.addEventListener("input", () => {
   loginPin.value = loginPin.value.replace(/\D/g, "").slice(0, 4);
 });
+refreshAssignedRoutesButton.addEventListener(
+  "click",
+  () => loadAssignedRoutes(true)
+);
+signOutButtons.forEach(button => {
+  button.addEventListener("click", signOutDriver);
+});
 startButton.addEventListener("click", startScanner);
 flashlightButton.addEventListener("click", toggleFlashlight);
 resumeScanningButton.addEventListener("click", resumeScanning);
@@ -170,12 +193,15 @@ setInterval(syncPendingRecords, 15000);
 function initializeAuthentication() {
   const savedDriver = readStoredJson(DRIVER_SESSION_KEY, null);
 
+  loginPhone.value = localStorage.getItem(SAVED_PHONE_KEY) || "";
+
   if (savedDriver?.driverId && savedDriver?.phone) {
     openTrackMaster();
     return;
   }
 
   loginPage.hidden = false;
+  routePickerPage.hidden = true;
   routePage.hidden = true;
   scannerPage.hidden = true;
   loginPhone.focus();
@@ -235,6 +261,7 @@ async function handleLogin(event) {
       phone: String(data.driver.phone),
       signedInAt: new Date().toISOString()
     });
+    localStorage.setItem(SAVED_PHONE_KEY, loginPhone.value);
 
     loginPin.value = "";
     openTrackMaster();
@@ -262,12 +289,166 @@ function formatLoginPhone() {
 
 function openTrackMaster() {
   loginPage.hidden = true;
-  routePage.hidden = false;
 
   if (appStarted) return;
 
   appStarted = true;
-  loadCartonData();
+
+  if (shippingEvent) {
+    routePage.hidden = false;
+    loadCartonData();
+    return;
+  }
+
+  loadAssignedRoutes();
+}
+
+async function loadAssignedRoutes(forceRefresh = false) {
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+
+  if (!driver?.driverId) {
+    signOutDriver();
+    return;
+  }
+
+  const cacheKey = `trackmaster-assigned-routes-${driver.driverId}`;
+  const cached = readStoredJson(cacheKey, null);
+
+  loginPage.hidden = true;
+  routePage.hidden = true;
+  scannerPage.hidden = true;
+  routePickerPage.hidden = false;
+  driverWelcome.textContent = driver.driverName
+    ? `Signed in as ${driver.driverName}`
+    : `Driver ${driver.driverId}`;
+  assignedRouteList.innerHTML = "";
+
+  if (!navigator.onLine && cached?.routes) {
+    displayAssignedRoutes(cached.routes, true);
+    return;
+  }
+
+  if (!navigator.onLine) {
+    routePickerMessage.textContent =
+      "No assigned routes are saved on this phone. Connect to service and try again.";
+    routePickerMessage.classList.add("error");
+    return;
+  }
+
+  if (!forceRefresh && cached?.routes?.length) {
+    routePickerMessage.textContent =
+      "Saved assignments ready — checking for updates…";
+  } else {
+    routePickerMessage.textContent = "Finding today’s assigned routes…";
+  }
+
+  refreshAssignedRoutesButton.disabled = true;
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "driverRoutes",
+        driverId: driver.driverId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Could not reach assigned routes.");
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !Array.isArray(data.routes)) {
+      throw new Error(
+        data.error || "Assigned routes could not be loaded."
+      );
+    }
+
+    writeStoredJson(cacheKey, {
+      routes: data.routes,
+      savedAt: new Date().toISOString()
+    });
+    displayAssignedRoutes(data.routes, false);
+  } catch (error) {
+    if (cached?.routes?.length) {
+      displayAssignedRoutes(cached.routes, true);
+      return;
+    }
+
+    routePickerMessage.textContent =
+      error.message || "Assigned routes could not be loaded.";
+    routePickerMessage.classList.add("error");
+  } finally {
+    refreshAssignedRoutesButton.disabled = !navigator.onLine;
+  }
+}
+
+function displayAssignedRoutes(routes, fromCache) {
+  routePickerMessage.classList.remove("error");
+
+  if (!routes.length) {
+    routePickerMessage.textContent =
+      "No routes are assigned to you for today.";
+    assignedRouteList.innerHTML = "";
+    return;
+  }
+
+  if (routes.length === 1) {
+    openAssignedRoute(routes[0].shippingEvent);
+    return;
+  }
+
+  routePickerMessage.textContent = fromCache
+    ? "Offline assignments ready — choose a route."
+    : "Choose a route to begin.";
+  assignedRouteList.innerHTML = "";
+
+  routes.forEach(route => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "assigned-route-card";
+    button.innerHTML = `
+      <span class="assigned-route-name"></span>
+      <span class="assigned-route-meta"></span>
+    `;
+    button.querySelector(".assigned-route-name").textContent =
+      route.routeName || `Shipping Event ${route.shippingEvent}`;
+    button.querySelector(".assigned-route-meta").textContent =
+      `${route.routeDate || "Today"} · SE ${route.shippingEvent}`;
+    button.addEventListener("click", () =>
+      openAssignedRoute(route.shippingEvent)
+    );
+    assignedRouteList.appendChild(button);
+  });
+}
+
+function openAssignedRoute(assignedShippingEvent) {
+  if (!/^\d+$/.test(String(assignedShippingEvent || ""))) {
+    routePickerMessage.textContent = "That route is invalid.";
+    routePickerMessage.classList.add("error");
+    return;
+  }
+
+  const routeUrl = new URL(window.location.href);
+  routeUrl.search = "";
+  routeUrl.searchParams.set(
+    "shippingEvent",
+    String(assignedShippingEvent)
+  );
+  window.location.replace(routeUrl.toString());
+}
+
+function signOutDriver() {
+  stopScanner();
+  localStorage.removeItem(DRIVER_SESSION_KEY);
+
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.search = "";
+  window.location.replace(cleanUrl.toString());
 }
 
 function readStoredJson(key, fallback) {
