@@ -3,6 +3,7 @@ const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("scan-result");
 const countBox = document.getElementById("scan-count");
 const startButton = document.getElementById("start-button");
+const resetButton = document.getElementById("test-reset-button");
 const dropIdBox = document.getElementById("drop-id");
 const remainingBox = document.getElementById("remaining-count");
 
@@ -24,6 +25,7 @@ let lastCode = "";
 let lastScanTime = 0;
 let scannerRunning = false;
 let syncRunning = false;
+let routeDataGeneration = 0;
 let audioContext;
 
 const scannedCartons = new Set();
@@ -38,6 +40,14 @@ hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 const codeReader = new ZXing.BrowserMultiFormatReader(hints);
 
 startButton.addEventListener("click", startScanner);
+
+if (resetButton) {
+  resetButton.addEventListener(
+    "click",
+    resetCurrentDropForTesting
+  );
+}
+
 window.addEventListener("online", syncPendingRecords);
 
 resetLocalDropIfRequested();
@@ -60,6 +70,19 @@ function writeStoredJson(key, value) {
 
 function resetLocalDropIfRequested() {
   if (urlParams.get("resetScans") !== "1") return;
+
+  routeDataGeneration++;
+  clearLocalDropScanData();
+
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete("resetScans");
+  window.history.replaceState({}, "", cleanUrl.toString());
+
+  resultBox.textContent =
+    "Local test scans reset for this drop.";
+}
+
+function clearLocalDropScanData() {
 
   const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
   const dropCartonNumbers = new Set(
@@ -103,13 +126,75 @@ function resetLocalDropIfRequested() {
 
     writeStoredJson(SYNC_QUEUE_KEY, retainedQueue);
   }
+}
 
-  const cleanUrl = new URL(window.location.href);
-  cleanUrl.searchParams.delete("resetScans");
-  window.history.replaceState({}, "", cleanUrl.toString());
+async function resetCurrentDropForTesting() {
+  const confirmed = window.confirm(
+    "TEST RESET\n\nDelete all recorded scans for this drop?"
+  );
 
-  resultBox.textContent =
-    "Local test scans reset for this drop.";
+  if (!confirmed) return;
+
+  if (scannerRunning) {
+    codeReader.reset();
+    scannerRunning = false;
+  }
+
+  resetButton.disabled = true;
+  resetButton.textContent = "Resetting Drop...";
+  startButton.disabled = true;
+  statusBox.textContent = "Resetting drop scans...";
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "resetDropScans",
+        shippingEvent,
+        dropId: activeDropId
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Could not reach the reset service.");
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || "The reset was rejected.");
+    }
+
+    routeDataGeneration++;
+    clearLocalDropScanData();
+
+    const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
+
+    if (cachedData?.cartons?.length) {
+      applyCartonData(cachedData);
+    }
+
+    cartonDataReady = true;
+    startButton.disabled = false;
+    startButton.textContent = "Start Scanner";
+    document.body.classList.remove("scan-error");
+
+    statusBox.textContent =
+      "Drop reset — sync AppSheet to refresh it";
+    resultBox.textContent =
+      `${data.deletedCount || 0} saved scans deleted.`;
+  } catch (error) {
+    console.error(error);
+    startButton.disabled = false;
+    statusBox.textContent = "RESET FAILED";
+    resultBox.textContent = error.message;
+  } finally {
+    resetButton.disabled = false;
+    resetButton.textContent = "TEST: Reset This Drop";
+  }
 }
 
 function getAcceptedCartons() {
@@ -291,8 +376,14 @@ async function fetchCartonDataFromServer() {
 }
 
 async function refreshCartonDataInBackground() {
+  const requestedGeneration = routeDataGeneration;
+
   try {
     const serverData = await fetchCartonDataFromServer();
+
+    if (requestedGeneration !== routeDataGeneration) {
+      return;
+    }
 
     writeStoredJson(ROUTE_CACHE_KEY, serverData);
     applyCartonData(serverData);
