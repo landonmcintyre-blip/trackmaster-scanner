@@ -10,13 +10,55 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=20">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
 <body>
   <main class="app-shell">
-    <section id="route-page" class="route-page">
+    <section id="login-page" class="login-page">
+      <div class="login-card">
+        <div class="brand">TRACKMASTER</div>
+        <h1>Driver Sign In</h1>
+        <p class="login-intro">
+          Enter your phone number and four-digit PIN.
+        </p>
+
+        <form id="login-form" novalidate>
+          <label for="login-phone">Phone number</label>
+          <input
+            id="login-phone"
+            name="phone"
+            type="tel"
+            inputmode="tel"
+            autocomplete="tel"
+            placeholder="(971) 555-0123"
+            required
+          >
+
+          <label for="login-pin">4-digit PIN</label>
+          <input
+            id="login-pin"
+            name="pin"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
+            pattern="[0-9]*"
+            maxlength="4"
+            placeholder="1234"
+            required
+          >
+
+          <div id="login-message" class="login-message" role="alert"></div>
+
+          <button id="login-button" class="primary-button" type="submit">
+            Sign In
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section id="route-page" class="route-page" hidden>
       <header class="app-header">
         <div>
           <div class="brand">TRACKMASTER</div>
@@ -110,7 +152,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=18"></script>
+  <script src="scanner.js?v=20"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

@@ -1,3 +1,9 @@
+const loginPage = document.getElementById("login-page");
+const loginForm = document.getElementById("login-form");
+const loginPhone = document.getElementById("login-phone");
+const loginPin = document.getElementById("login-pin");
+const loginButton = document.getElementById("login-button");
+const loginMessage = document.getElementById("login-message");
 const routePage = document.getElementById("route-page");
 const scannerPage = document.getElementById("scanner-page");
 const routeNameBox = document.getElementById("route-name");
@@ -32,6 +38,7 @@ const API_URL =
 
 const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
+const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 
 const urlParams = new URLSearchParams(window.location.search);
 const requestedDropId = String(urlParams.get("dropId") || "").trim();
@@ -66,6 +73,7 @@ let audioContext;
 let cameraTrack = null;
 let torchAvailable = false;
 let torchOn = false;
+let appStarted = false;
 
 const scannedCartons = new Set();
 
@@ -133,6 +141,11 @@ startButton.disabled = true;
 refreshRouteButton.disabled = !navigator.onLine;
 updateNetworkStatus();
 
+loginForm.addEventListener("submit", handleLogin);
+loginPhone.addEventListener("input", formatLoginPhone);
+loginPin.addEventListener("input", () => {
+  loginPin.value = loginPin.value.replace(/\D/g, "").slice(0, 4);
+});
 startButton.addEventListener("click", startScanner);
 flashlightButton.addEventListener("click", toggleFlashlight);
 resumeScanningButton.addEventListener("click", resumeScanning);
@@ -151,8 +164,111 @@ document.addEventListener("visibilitychange", () => {
 });
 
 resetLocalDropIfRequested();
-loadCartonData();
+initializeAuthentication();
 setInterval(syncPendingRecords, 15000);
+
+function initializeAuthentication() {
+  const savedDriver = readStoredJson(DRIVER_SESSION_KEY, null);
+
+  if (savedDriver?.driverId && savedDriver?.phone) {
+    openTrackMaster();
+    return;
+  }
+
+  loginPage.hidden = false;
+  routePage.hidden = true;
+  scannerPage.hidden = true;
+  loginPhone.focus();
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+
+  const phone = loginPhone.value.replace(/\D/g, "");
+  const pin = loginPin.value.replace(/\D/g, "");
+
+  loginMessage.textContent = "";
+
+  if (phone.length !== 10 || pin.length !== 4) {
+    loginMessage.textContent =
+      "Enter a 10-digit phone number and 4-digit PIN.";
+    return;
+  }
+
+  if (!navigator.onLine) {
+    loginMessage.textContent =
+      "The first sign-in on this phone requires service.";
+    return;
+  }
+
+  loginButton.disabled = true;
+  loginButton.textContent = "Signing In…";
+
+  try {
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8"
+      },
+      body: JSON.stringify({
+        action: "login",
+        phone,
+        pin
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error("Could not reach TrackMaster.");
+    }
+
+    const data = await response.json();
+
+    if (!data.success || !data.driver?.driverId) {
+      throw new Error(
+        data.error || "Incorrect phone number or PIN."
+      );
+    }
+
+    writeStoredJson(DRIVER_SESSION_KEY, {
+      driverId: String(data.driver.driverId),
+      driverName: String(data.driver.driverName || ""),
+      phone: String(data.driver.phone),
+      signedInAt: new Date().toISOString()
+    });
+
+    loginPin.value = "";
+    openTrackMaster();
+  } catch (error) {
+    loginMessage.textContent =
+      error.message || "Sign-in failed. Please try again.";
+  } finally {
+    loginButton.disabled = false;
+    loginButton.textContent = "Sign In";
+  }
+}
+
+function formatLoginPhone() {
+  const digits = loginPhone.value.replace(/\D/g, "").slice(0, 10);
+
+  if (digits.length < 4) {
+    loginPhone.value = digits;
+  } else if (digits.length < 7) {
+    loginPhone.value = `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  } else {
+    loginPhone.value =
+      `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+}
+
+function openTrackMaster() {
+  loginPage.hidden = true;
+  routePage.hidden = false;
+
+  if (appStarted) return;
+
+  appStarted = true;
+  loadCartonData();
+}
 
 function readStoredJson(key, fallback) {
   try {
