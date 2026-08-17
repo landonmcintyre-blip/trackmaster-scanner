@@ -3,6 +3,12 @@ const scannerPage = document.getElementById("scanner-page");
 const routeNameBox = document.getElementById("route-name");
 const routeMetaBox = document.getElementById("route-meta");
 const routeProgressBox = document.getElementById("route-progress");
+const routeSummaryLabel = document.getElementById(
+  "route-summary-label"
+);
+const resumeScanningButton = document.getElementById(
+  "resume-scanning-button"
+);
 const routeMessageBox = document.getElementById("route-message");
 const dropListBox = document.getElementById("drop-list");
 const networkStatusBox = document.getElementById("network-status");
@@ -14,6 +20,9 @@ const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("scan-result");
 const countBox = document.getElementById("scan-count");
 const startButton = document.getElementById("start-button");
+const flashlightButton = document.getElementById(
+  "flashlight-button"
+);
 const resetButton = document.getElementById("test-reset-button");
 const dropIdBox = document.getElementById("drop-id");
 const remainingBox = document.getElementById("remaining-count");
@@ -54,6 +63,9 @@ let scannerRunning = false;
 let syncRunning = false;
 let routeDataGeneration = 0;
 let audioContext;
+let cameraTrack = null;
+let torchAvailable = false;
+let torchOn = false;
 
 const scannedCartons = new Set();
 
@@ -67,6 +79,8 @@ refreshRouteButton.disabled = !navigator.onLine;
 updateNetworkStatus();
 
 startButton.addEventListener("click", startScanner);
+flashlightButton.addEventListener("click", toggleFlashlight);
+resumeScanningButton.addEventListener("click", resumeScanning);
 backToRouteButton.addEventListener("click", showRoutePage);
 refreshRouteButton.addEventListener("click", refreshRouteManually);
 resetButton.addEventListener("click", resetCurrentDropForTesting);
@@ -573,6 +587,31 @@ function openScannerForDrop(dropId) {
   window.scrollTo(0, 0);
 }
 
+function resumeScanning() {
+  if (!routeData?.cartons?.length) return;
+
+  const knownAccepted = getKnownAcceptedCartons();
+  const orderedCartons = [...routeData.cartons].sort(
+    (a, b) => Number(a.dropNumber) - Number(b.dropNumber)
+  );
+  const cartonIsRemaining = carton =>
+    !knownAccepted.has(
+      String(carton.cartonNumber).trim().toUpperCase()
+    );
+  const activeDropHasRemaining = orderedCartons.some(carton =>
+    carton.dropId === activeDropId && cartonIsRemaining(carton)
+  );
+  const nextCarton = activeDropHasRemaining
+    ? orderedCartons.find(carton =>
+        carton.dropId === activeDropId && cartonIsRemaining(carton)
+      )
+    : orderedCartons.find(cartonIsRemaining);
+
+  if (nextCarton) {
+    openScannerForDrop(nextCarton.dropId);
+  }
+}
+
 function applyActiveDropData() {
   if (!routeData || !activeDropId) return;
 
@@ -672,6 +711,14 @@ function renderRoutePage() {
 
   routeProgressBox.textContent =
     `${routeScannedCount} of ${routeData.cartons.length} cartons scanned`;
+  const routeComplete =
+    routeScannedCount === routeData.cartons.length;
+
+  resumeScanningButton.disabled = routeComplete;
+  resumeScanningButton.classList.toggle("complete", routeComplete);
+  routeSummaryLabel.textContent = routeComplete
+    ? "Route complete"
+    : "Route progress · Tap to resume";
 
   dropListBox.replaceChildren();
 
@@ -795,11 +842,19 @@ async function startScanner() {
         /back|rear|environment/i.test(device.label)
       ) || devices[devices.length - 1];
 
-    statusBox.textContent =
-      "Ready — point the camera at a carton tag";
+    const cameraConstraints = {
+      video: {
+        deviceId: { exact: rearCamera.deviceId },
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      },
+      audio: false
+    };
 
-    codeReader.decodeFromVideoDevice(
-      rearCamera.deviceId,
+    await codeReader.decodeFromConstraints(
+      cameraConstraints,
       video,
       (result, error) => {
         if (result) {
@@ -814,6 +869,10 @@ async function startScanner() {
         }
       }
     );
+
+    configureCameraControls();
+    statusBox.textContent =
+      "Ready — barcode can face any direction";
   } catch (error) {
     console.error(error);
     scannerRunning = false;
@@ -824,11 +883,72 @@ async function startScanner() {
   }
 }
 
+function configureCameraControls() {
+  const stream = video.srcObject;
+  cameraTrack = stream?.getVideoTracks?.()[0] || null;
+
+  let capabilities = {};
+
+  try {
+    capabilities = cameraTrack?.getCapabilities?.() || {};
+  } catch (error) {
+    console.warn("Camera capabilities unavailable:", error);
+  }
+
+  torchAvailable =
+    capabilities.torch === true ||
+    (
+      Array.isArray(capabilities.torch) &&
+      capabilities.torch.includes(true)
+    );
+
+  torchOn = false;
+  flashlightButton.hidden = !torchAvailable;
+  updateFlashlightButton();
+}
+
+async function toggleFlashlight() {
+  if (!cameraTrack || !torchAvailable) return;
+
+  const nextTorchState = !torchOn;
+
+  try {
+    await cameraTrack.applyConstraints({
+      advanced: [{ torch: nextTorchState }]
+    });
+
+    torchOn = nextTorchState;
+    updateFlashlightButton();
+  } catch (error) {
+    console.error("Flashlight control failed:", error);
+    statusBox.textContent =
+      "This phone would not allow flashlight control.";
+  }
+}
+
+function updateFlashlightButton() {
+  flashlightButton.classList.toggle("active", torchOn);
+  flashlightButton.setAttribute("aria-pressed", String(torchOn));
+  flashlightButton.setAttribute(
+    "aria-label",
+    torchOn ? "Turn flashlight off" : "Turn flashlight on"
+  );
+}
+
+function resetCameraControls() {
+  cameraTrack = null;
+  torchAvailable = false;
+  torchOn = false;
+  flashlightButton.hidden = true;
+  updateFlashlightButton();
+}
+
 function stopScanner() {
   if (scannerRunning) {
     codeReader.reset();
   }
 
+  resetCameraControls();
   scannerRunning = false;
   startButton.disabled = !cartonDataReady;
   startButton.textContent = "Start Scanner";

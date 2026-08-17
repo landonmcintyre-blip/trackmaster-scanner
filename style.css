@@ -92,12 +92,34 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   gap: 12px;
   margin-bottom: 14px;
   padding: 15px;
   border: 1px solid #374151;
   border-radius: 12px;
   background: #1f2937;
+  color: #f9fafb;
+  cursor: pointer;
+  text-align: left;
+}
+
+.route-summary:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.route-summary.complete {
+  border-color: #166534;
+  background: #14532d;
+  cursor: default;
+}
+
+.route-summary:disabled {
+  opacity: 1;
+}
+
+.summary-progress-block {
+  display: block;
 }
 
 .summary-label {
@@ -268,7 +290,7 @@ h1 {
   overflow: hidden;
   border: 3px solid #374151;
   border-radius: 14px;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   background: black;
 }
 
@@ -276,6 +298,59 @@ h1 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.scanner-guide {
+  position: absolute;
+  inset: 12%;
+  pointer-events: none;
+  border: 2px solid rgb(255 255 255 / 72%);
+  border-radius: 16px;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 8%);
+}
+
+.orientation-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  max-width: calc(100% - 88px);
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 68%);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+  text-transform: uppercase;
+}
+
+.flashlight-button {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  display: grid;
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  place-items: center;
+  border: 2px solid rgb(255 255 255 / 75%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 72%);
+  color: white;
+  font-size: 25px;
+  cursor: pointer;
+}
+
+.flashlight-button.active {
+  border-color: #fdba74;
+  background: #f97316;
+  box-shadow: 0 0 20px rgb(249 115 22 / 80%);
+}
+
+.flashlight-button:active {
+  transform: scale(0.95);
 }
 
 .status {
@@ -346,5 +421,43 @@ body.scan-error .status {
   .route-page,
   .scanner-page {
     padding: 28px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 650px) {
+  .app-shell {
+    max-width: none;
+  }
+
+  .scanner-page {
+    padding: 10px 14px 18px;
+  }
+
+  .scanner-header {
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .scanner-header .summary-label {
+    display: none;
+  }
+
+  .scanner-window {
+    width: min(100%, 900px);
+    height: 68dvh;
+    min-height: 250px;
+    margin: 0 auto;
+    aspect-ratio: auto;
+  }
+
+  .scanner-guide {
+    inset: 10%;
+  }
+
+  .status {
+    min-height: 46px;
+    margin: 8px 0;
+    padding: 11px;
+    font-size: 16px;
   }
 }

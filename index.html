@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=16">
+  <link rel="stylesheet" href="style.css?v=17">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -29,13 +29,19 @@
         </span>
       </header>
 
-      <section class="route-summary">
-        <div>
-          <span class="summary-label">Route progress</span>
+      <button
+        id="resume-scanning-button"
+        class="route-summary"
+        type="button"
+      >
+        <span class="summary-progress-block">
+          <span id="route-summary-label" class="summary-label">
+            Route progress · Tap to resume
+          </span>
           <strong id="route-progress">Loading carton data…</strong>
-        </div>
-        <div id="pending-sync" class="pending-sync"></div>
-      </section>
+        </span>
+        <span id="pending-sync" class="pending-sync"></span>
+      </button>
 
       <div id="route-message" class="route-message">
         Loading today’s drops…
@@ -62,6 +68,23 @@
 
       <section class="scanner-window">
         <video id="camera" playsinline></video>
+
+        <div class="scanner-guide" aria-hidden="true"></div>
+
+        <div class="orientation-hint" aria-hidden="true">
+          Scan in any direction
+        </div>
+
+        <button
+          id="flashlight-button"
+          class="flashlight-button"
+          type="button"
+          aria-label="Turn flashlight on"
+          aria-pressed="false"
+          hidden
+        >
+          <span aria-hidden="true">&#128294;</span>
+        </button>
       </section>
 
       <div id="status" class="status">
@@ -87,7 +110,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=16"></script>
+  <script src="scanner.js?v=17"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
