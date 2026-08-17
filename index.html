@@ -1,7 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+  >
+  <meta name="theme-color" content="#111827">
+
+  <title>TrackMaster</title>
+
+  <link rel="stylesheet" href="style.css?v=16">
+  <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
+
 <body>
+  <main class="app-shell">
+    <section id="route-page" class="route-page">
+      <header class="app-header">
+        <div>
+          <div class="brand">TRACKMASTER</div>
+          <h1 id="route-name">Loading route…</h1>
+          <div id="route-meta" class="route-meta"></div>
+        </div>
+
+        <span id="network-status" class="network-status">
+          Checking…
+        </span>
+      </header>
+
+      <section class="route-summary">
+        <div>
+          <span class="summary-label">Route progress</span>
+          <strong id="route-progress">Loading carton data…</strong>
+        </div>
+        <div id="pending-sync" class="pending-sync"></div>
+      </section>
+
+      <div id="route-message" class="route-message">
+        Loading today’s drops…
+      </div>
+
+      <section id="drop-list" class="drop-list"></section>
+
+      <button id="refresh-route-button" class="secondary-button" type="button">
+        Refresh Route Data
+      </button>
+    </section>
+
+    <section id="scanner-page" class="scanner-page" hidden>
+      <header class="scanner-header">
+        <button id="back-to-route" class="back-button" type="button">
+          ← Route
+        </button>
+
+        <div>
+          <span class="summary-label">Active drop</span>
+          <h1 id="drop-id">Not provided</h1>
+        </div>
+      </header>
+
+      <section class="scanner-window">
+        <video id="camera" playsinline></video>
+      </section>
+
+      <div id="status" class="status">
+        Select a drop to begin
+      </div>
+
+      <button id="start-button" class="primary-button" type="button">
+        Start Scanner
+      </button>
+
+      <button id="test-reset-button" class="test-reset-button" type="button">
+        TEST: Reset This Drop
+      </button>
+
+      <section class="results">
+        <h2>Last scanned carton</h2>
+        <div id="scan-result">None</div>
+
+        <h2>Scan count</h2>
+        <div id="scan-count">0</div>
+        <div id="remaining-count">0 cartons remaining</div>
+      </section>
+    </section>
+  </main>
+
+  <script src="scanner.js?v=16"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("./service-worker.js")
+          .catch(error => {
+            console.error(
+              "Service worker registration failed:",
+              error
+            );
+          });
+      });
+    }
+  </script>
 </body>
 </html>
