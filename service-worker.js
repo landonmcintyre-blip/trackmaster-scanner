@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v15";
+const CACHE_NAME = "trackmaster-shell-v16";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,8 +10,8 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("style.css", APP_SCOPE).href,
-  new URL("scanner.js?v=15", APP_SCOPE).href,
+  new URL("style.css?v=16", APP_SCOPE).href,
+  new URL("scanner.js?v=16", APP_SCOPE).href,
   ZXING_URL
 ];
 

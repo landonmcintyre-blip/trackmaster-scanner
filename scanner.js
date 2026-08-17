@@ -1,3 +1,14 @@
+const routePage = document.getElementById("route-page");
+const scannerPage = document.getElementById("scanner-page");
+const routeNameBox = document.getElementById("route-name");
+const routeMetaBox = document.getElementById("route-meta");
+const routeProgressBox = document.getElementById("route-progress");
+const routeMessageBox = document.getElementById("route-message");
+const dropListBox = document.getElementById("drop-list");
+const networkStatusBox = document.getElementById("network-status");
+const pendingSyncBox = document.getElementById("pending-sync");
+const refreshRouteButton = document.getElementById("refresh-route-button");
+const backToRouteButton = document.getElementById("back-to-route");
 const video = document.getElementById("camera");
 const statusBox = document.getElementById("status");
 const resultBox = document.getElementById("scan-result");
@@ -7,17 +18,33 @@ const resetButton = document.getElementById("test-reset-button");
 const dropIdBox = document.getElementById("drop-id");
 const remainingBox = document.getElementById("remaining-count");
 
-const urlParams = new URLSearchParams(window.location.search);
-const activeDropId = urlParams.get("dropId");
-const shippingEvent = activeDropId?.split("-")[0] || "";
-
 const API_URL =
   "https://script.google.com/macros/s/AKfycby-XWD-6dWtzXHG1PtTy03Km326GsCmy3j4aKjJwa-0mRQI1w73iAsqc1ocr8XLeuEYog/exec";
 
-const ROUTE_CACHE_KEY = `trackmaster-route-${shippingEvent}`;
-const ACCEPTED_KEY = `trackmaster-accepted-${shippingEvent}`;
+const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 
+const urlParams = new URLSearchParams(window.location.search);
+const requestedDropId = String(urlParams.get("dropId") || "").trim();
+const requestedShippingEvent = String(
+  urlParams.get("shippingEvent") || ""
+).trim();
+const rememberedShippingEvent = String(
+  localStorage.getItem(LAST_ROUTE_KEY) || ""
+).trim();
+
+const shippingEvent =
+  requestedShippingEvent ||
+  requestedDropId.split("-")[0] ||
+  rememberedShippingEvent;
+
+const ROUTE_CACHE_KEY =
+  `trackmaster-route-${shippingEvent || "missing"}`;
+const ACCEPTED_KEY =
+  `trackmaster-accepted-${shippingEvent || "missing"}`;
+
+let activeDropId = requestedDropId;
+let routeData = null;
 let cartonLookup = new Map();
 let cartonDataReady = false;
 let activeDropTotal = 0;
@@ -30,25 +57,29 @@ let audioContext;
 
 const scannedCartons = new Set();
 
-dropIdBox.textContent = activeDropId || "Not provided";
-startButton.disabled = true;
-statusBox.textContent = "Loading carton data...";
-
 const hints = new Map();
 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
 
 const codeReader = new ZXing.BrowserMultiFormatReader(hints);
 
+startButton.disabled = true;
+refreshRouteButton.disabled = !navigator.onLine;
+updateNetworkStatus();
+
 startButton.addEventListener("click", startScanner);
+backToRouteButton.addEventListener("click", showRoutePage);
+refreshRouteButton.addEventListener("click", refreshRouteManually);
+resetButton.addEventListener("click", resetCurrentDropForTesting);
 
-if (resetButton) {
-  resetButton.addEventListener(
-    "click",
-    resetCurrentDropForTesting
-  );
-}
+window.addEventListener("online", handleConnectionChange);
+window.addEventListener("offline", handleConnectionChange);
 
-window.addEventListener("online", syncPendingRecords);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    updateNetworkStatus();
+    syncPendingRecords();
+  }
+});
 
 resetLocalDropIfRequested();
 loadCartonData();
@@ -68,8 +99,42 @@ function writeStoredJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function updateNetworkStatus() {
+  const online = navigator.onLine;
+
+  networkStatusBox.textContent = online ? "ONLINE" : "OFFLINE";
+  networkStatusBox.classList.toggle("online", online);
+  networkStatusBox.classList.toggle("offline", !online);
+  refreshRouteButton.disabled = !online;
+  renderPendingSync();
+}
+
+function handleConnectionChange() {
+  updateNetworkStatus();
+
+  if (navigator.onLine) {
+    syncPendingRecords();
+    refreshCartonDataInBackground();
+  }
+}
+
+function renderPendingSync() {
+  const queue = readStoredJson(SYNC_QUEUE_KEY, []);
+  const routeQueue = Array.isArray(queue)
+    ? queue.filter(record =>
+        String(record.shippingEvent) === shippingEvent
+      )
+    : [];
+
+  pendingSyncBox.textContent = routeQueue.length
+    ? `${routeQueue.length} waiting to sync`
+    : "All scans synced";
+}
+
 function resetLocalDropIfRequested() {
-  if (urlParams.get("resetScans") !== "1") return;
+  if (urlParams.get("resetScans") !== "1" || !activeDropId) {
+    return;
+  }
 
   routeDataGeneration++;
   clearLocalDropScanData();
@@ -77,14 +142,33 @@ function resetLocalDropIfRequested() {
   const cleanUrl = new URL(window.location.href);
   cleanUrl.searchParams.delete("resetScans");
   window.history.replaceState({}, "", cleanUrl.toString());
+}
 
-  resultBox.textContent =
-    "Local test scans reset for this drop.";
+function getAcceptedCartons() {
+  return new Set(
+    readStoredJson(ACCEPTED_KEY, []).map(value =>
+      String(value).trim().toUpperCase()
+    )
+  );
+}
+
+function getKnownAcceptedCartons() {
+  return new Set([
+    ...((routeData?.scannedCartons || []).map(value =>
+      String(value).trim().toUpperCase()
+    )),
+    ...getAcceptedCartons()
+  ]);
+}
+
+function rememberAcceptedCarton(cartonNumber) {
+  const accepted = getAcceptedCartons();
+  accepted.add(cartonNumber);
+  writeStoredJson(ACCEPTED_KEY, [...accepted]);
 }
 
 function clearLocalDropScanData() {
-
-  const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
+  const cachedData = routeData || readStoredJson(ROUTE_CACHE_KEY, null);
   const dropCartonNumbers = new Set(
     (cachedData?.cartons || [])
       .filter(carton => carton.dropId === activeDropId)
@@ -110,6 +194,7 @@ function clearLocalDropScanData() {
         );
 
     writeStoredJson(ROUTE_CACHE_KEY, cachedData);
+    routeData = cachedData;
   } else {
     localStorage.removeItem(ACCEPTED_KEY);
   }
@@ -126,6 +211,8 @@ function clearLocalDropScanData() {
 
     writeStoredJson(SYNC_QUEUE_KEY, retainedQueue);
   }
+
+  renderPendingSync();
 }
 
 async function resetCurrentDropForTesting() {
@@ -135,11 +222,14 @@ async function resetCurrentDropForTesting() {
 
   if (!confirmed) return;
 
-  if (scannerRunning) {
-    codeReader.reset();
-    scannerRunning = false;
+  if (!navigator.onLine) {
+    statusBox.textContent = "RESET NEEDS SERVICE";
+    resultBox.textContent =
+      "Reconnect before resetting this test drop.";
+    return;
   }
 
+  stopScanner();
   resetButton.disabled = true;
   resetButton.textContent = "Resetting Drop...";
   startButton.disabled = true;
@@ -170,20 +260,15 @@ async function resetCurrentDropForTesting() {
 
     routeDataGeneration++;
     clearLocalDropScanData();
-
-    const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
-
-    if (cachedData?.cartons?.length) {
-      applyCartonData(cachedData);
-    }
+    applyRouteData(routeData);
+    applyActiveDropData();
 
     cartonDataReady = true;
     startButton.disabled = false;
     startButton.textContent = "Start Scanner";
     document.body.classList.remove("scan-error");
 
-    statusBox.textContent =
-      "Drop reset — sync AppSheet to refresh it";
+    statusBox.textContent = "Drop reset";
     resultBox.textContent =
       `${data.deletedCount || 0} saved scans deleted.`;
   } catch (error) {
@@ -195,20 +280,6 @@ async function resetCurrentDropForTesting() {
     resetButton.disabled = false;
     resetButton.textContent = "TEST: Reset This Drop";
   }
-}
-
-function getAcceptedCartons() {
-  return new Set(
-    readStoredJson(ACCEPTED_KEY, []).map(value =>
-      String(value).toUpperCase()
-    )
-  );
-}
-
-function rememberAcceptedCarton(cartonNumber) {
-  const accepted = getAcceptedCartons();
-  accepted.add(cartonNumber);
-  writeStoredJson(ACCEPTED_KEY, [...accepted]);
 }
 
 function createRecordId() {
@@ -239,6 +310,7 @@ function queueRecord(record) {
   });
 
   writeStoredJson(SYNC_QUEUE_KEY, queue);
+  renderPendingSync();
 }
 
 function queueSuccessfulScan(cartonNumber) {
@@ -270,17 +342,15 @@ function queueScanException(cartonNumber, exceptionType, notes) {
 async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
 
-  const submittedQueue =
-    readStoredJson(SYNC_QUEUE_KEY, []);
+  const submittedQueue = readStoredJson(SYNC_QUEUE_KEY, []);
 
-  if (
-    !Array.isArray(submittedQueue) ||
-    !submittedQueue.length
-  ) {
+  if (!Array.isArray(submittedQueue) || !submittedQueue.length) {
+    renderPendingSync();
     return;
   }
 
   syncRunning = true;
+  pendingSyncBox.textContent = `Syncing ${submittedQueue.length}…`;
 
   try {
     const response = await fetch(API_URL, {
@@ -302,33 +372,25 @@ async function syncPendingRecords() {
     const data = await response.json();
 
     if (!data.success) {
-      throw new Error(
-        data.error || "Batch sync was rejected."
-      );
+      throw new Error(data.error || "Batch sync was rejected.");
     }
 
     const submittedIds = new Set(
       submittedQueue.map(record => record.id)
     );
 
-    const latestQueue =
-      readStoredJson(SYNC_QUEUE_KEY, []);
-
+    const latestQueue = readStoredJson(SYNC_QUEUE_KEY, []);
     const remainingQueue = latestQueue.filter(
       record => !submittedIds.has(record.id)
     );
 
-    writeStoredJson(
-      SYNC_QUEUE_KEY,
-      remainingQueue
-    );
+    writeStoredJson(SYNC_QUEUE_KEY, remainingQueue);
   } catch (error) {
-    console.error(
-      "TrackMaster batch sync paused:",
-      error
-    );
+    console.error("TrackMaster batch sync paused:", error);
   } finally {
     syncRunning = false;
+    renderPendingSync();
+    renderRoutePage();
 
     if (
       navigator.onLine &&
@@ -341,20 +403,22 @@ async function syncPendingRecords() {
 
 async function loadCartonData() {
   try {
-    if (!activeDropId || !shippingEvent) {
-      throw new Error("No active drop was provided.");
+    if (!shippingEvent) {
+      throw new Error(
+        "No route is saved on this phone. Open TrackMaster from today’s route while online."
+      );
     }
 
+    localStorage.setItem(LAST_ROUTE_KEY, shippingEvent);
     const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
 
     if (cachedData?.cartons?.length) {
-      applyCartonData(cachedData);
+      applyRouteData(cachedData);
+      showRequestedStartingScreen();
 
-      cartonDataReady = true;
-      startButton.disabled = false;
-      startButton.textContent = "Start Scanner";
-      statusBox.textContent =
-        `Ready from phone — ${activeDropTotal} cartons for this drop`;
+      routeMessageBox.textContent = navigator.onLine
+        ? "Saved route ready — checking for updates…"
+        : "Offline route ready — tap a drop to scan.";
 
       refreshCartonDataInBackground();
       syncPendingRecords();
@@ -364,21 +428,22 @@ async function loadCartonData() {
     const serverData = await fetchCartonDataFromServer();
 
     writeStoredJson(ROUTE_CACHE_KEY, serverData);
-    applyCartonData(serverData);
+    applyRouteData(serverData);
+    showRequestedStartingScreen();
 
-    cartonDataReady = true;
-    startButton.disabled = false;
-    startButton.textContent = "Start Scanner";
-    statusBox.textContent =
-      `Ready — ${activeDropTotal} cartons for this drop`;
+    routeMessageBox.textContent =
+      "Route downloaded to this phone — tap a drop to scan.";
 
     syncPendingRecords();
   } catch (error) {
     console.error(error);
     cartonDataReady = false;
     startButton.disabled = true;
-    statusBox.textContent =
+    routeNameBox.textContent = "Route unavailable";
+    routeMessageBox.textContent =
       error.message || "Unable to load carton data.";
+    routeMessageBox.classList.add("error");
+    showRoutePage();
   }
 }
 
@@ -405,39 +470,113 @@ async function fetchCartonDataFromServer() {
 }
 
 async function refreshCartonDataInBackground() {
+  if (!navigator.onLine || !shippingEvent) return;
+
   const requestedGeneration = routeDataGeneration;
 
   try {
     const serverData = await fetchCartonDataFromServer();
 
-    if (requestedGeneration !== routeDataGeneration) {
-      return;
-    }
+    if (requestedGeneration !== routeDataGeneration) return;
 
     writeStoredJson(ROUTE_CACHE_KEY, serverData);
-    applyCartonData(serverData);
+    applyRouteData(serverData);
 
-    if (
-      !scannerRunning &&
-      !document.body.classList.contains("scan-error")
-    ) {
+    if (!scannerRunning && !scannerPage.hidden) {
       statusBox.textContent =
         `Ready — ${activeDropTotal} cartons for this drop`;
+    }
+
+    if (!routePage.hidden) {
+      routeMessageBox.textContent =
+        "Route is current and saved on this phone.";
     }
   } catch (error) {
     console.error("Route refresh paused:", error);
   }
 }
 
-function applyCartonData(data) {
+async function refreshRouteManually() {
+  refreshRouteButton.disabled = true;
+  routeMessageBox.classList.remove("error");
+  routeMessageBox.textContent = "Refreshing route data…";
+
+  try {
+    const serverData = await fetchCartonDataFromServer();
+    writeStoredJson(ROUTE_CACHE_KEY, serverData);
+    applyRouteData(serverData);
+    routeMessageBox.textContent =
+      "Route refreshed and saved on this phone.";
+  } catch (error) {
+    routeMessageBox.textContent = error.message;
+    routeMessageBox.classList.add("error");
+  } finally {
+    refreshRouteButton.disabled = !navigator.onLine;
+  }
+}
+
+function applyRouteData(data) {
+  routeData = data;
   cartonLookup = new Map(
     data.cartons.map(carton => [
-      carton.cartonNumber.toUpperCase(),
+      String(carton.cartonNumber).trim().toUpperCase(),
       carton
     ])
   );
 
-  const activeDropCartons = data.cartons.filter(
+  cartonDataReady = true;
+  routeMessageBox.classList.remove("error");
+  renderRoutePage();
+
+  if (!scannerPage.hidden && activeDropId) {
+    applyActiveDropData();
+  }
+}
+
+function showRequestedStartingScreen() {
+  const requestedScreen = urlParams.get("screen");
+
+  if (requestedScreen === "scan" && activeDropId) {
+    openScannerForDrop(activeDropId);
+    return;
+  }
+
+  showRoutePage();
+}
+
+function showRoutePage() {
+  stopScanner();
+  document.body.classList.remove("scan-success", "scan-error");
+  scannerPage.hidden = true;
+  routePage.hidden = false;
+  renderRoutePage();
+
+  const routeUrl = new URL(window.location.href);
+  routeUrl.searchParams.set("shippingEvent", shippingEvent);
+  routeUrl.searchParams.delete("screen");
+  window.history.replaceState({}, "", routeUrl.toString());
+}
+
+function openScannerForDrop(dropId) {
+  activeDropId = dropId;
+  applyActiveDropData();
+
+  routePage.hidden = true;
+  scannerPage.hidden = false;
+  document.body.classList.remove("scan-success", "scan-error");
+
+  const scannerUrl = new URL(window.location.href);
+  scannerUrl.searchParams.set("shippingEvent", shippingEvent);
+  scannerUrl.searchParams.set("dropId", activeDropId);
+  scannerUrl.searchParams.set("screen", "scan");
+  window.history.replaceState({}, "", scannerUrl.toString());
+  window.scrollTo(0, 0);
+}
+
+function applyActiveDropData() {
+  if (!routeData || !activeDropId) return;
+
+  const activeDropCartons = routeData.cartons.filter(
     carton => carton.dropId === activeDropId
   );
 
@@ -447,18 +586,12 @@ function applyCartonData(data) {
 
   const activeDropNumbers = new Set(
     activeDropCartons.map(carton =>
-      carton.cartonNumber.toUpperCase()
+      String(carton.cartonNumber).trim().toUpperCase()
     )
   );
 
   scannedCartons.clear();
-
-  const knownAccepted = new Set([
-    ...(data.scannedCartons || []).map(value =>
-      String(value).toUpperCase()
-    ),
-    ...getAcceptedCartons()
-  ]);
+  const knownAccepted = getKnownAcceptedCartons();
 
   knownAccepted.forEach(cartonNumber => {
     if (activeDropNumbers.has(cartonNumber)) {
@@ -469,22 +602,177 @@ function applyCartonData(data) {
   activeDropTotal = activeDropCartons.length;
   updateProgress();
 
-  const rawDropName =
-    activeDropCartons[0]?.customer || "Unknown stop";
+  const dropNumber = activeDropCartons[0].dropNumber;
+  const customer = cleanCustomerName(
+    activeDropCartons[0].customer
+  );
 
-  const activeDropName = rawDropName
+  dropIdBox.textContent = `Drop ${dropNumber} · ${customer}`;
+  resultBox.textContent = "None";
+  statusBox.textContent = navigator.onLine
+    ? `Ready — ${activeDropTotal} cartons for this drop`
+    : `Ready from phone — ${activeDropTotal} cartons for this drop`;
+  startButton.disabled = false;
+  startButton.textContent = "Start Scanner";
+}
+
+function renderRoutePage() {
+  if (!routeData?.cartons?.length) return;
+
+  const routeName =
+    String(routeData.routeName || "").trim() ||
+    `Shipping Event ${shippingEvent}`;
+
+  routeNameBox.textContent = routeName;
+  routeMetaBox.textContent = routeData.routeDate
+    ? `Shipping Event ${shippingEvent} · ${routeData.routeDate}`
+    : `Shipping Event ${shippingEvent}`;
+
+  const dropMap = new Map();
+
+  routeData.cartons.forEach(carton => {
+    const dropId = String(carton.dropId || "").trim();
+
+    if (!dropMap.has(dropId)) {
+      dropMap.set(dropId, {
+        dropId,
+        dropNumber: Number(carton.dropNumber),
+        customers: [],
+        cartons: []
+      });
+    }
+
+    const drop = dropMap.get(dropId);
+    const customer = cleanCustomerName(carton.customer);
+
+    if (
+      customer &&
+      !drop.customers.some(existing =>
+        existing.toLowerCase() === customer.toLowerCase()
+      )
+    ) {
+      drop.customers.push(customer);
+    }
+
+    drop.cartons.push(carton);
+  });
+
+  const drops = [...dropMap.values()].sort(
+    (a, b) => a.dropNumber - b.dropNumber
+  );
+  const knownAccepted = getKnownAcceptedCartons();
+  const routeCartonNumbers = new Set(
+    routeData.cartons.map(carton =>
+      String(carton.cartonNumber).trim().toUpperCase()
+    )
+  );
+  const routeScannedCount = [...knownAccepted].filter(
+    cartonNumber => routeCartonNumbers.has(cartonNumber)
+  ).length;
+
+  routeProgressBox.textContent =
+    `${routeScannedCount} of ${routeData.cartons.length} cartons scanned`;
+
+  dropListBox.replaceChildren();
+
+  drops.forEach(drop => {
+    const scannedCount = drop.cartons.filter(carton =>
+      knownAccepted.has(
+        String(carton.cartonNumber).trim().toUpperCase()
+      )
+    ).length;
+    const complete = scannedCount === drop.cartons.length;
+    const card = document.createElement("button");
+    const top = document.createElement("div");
+    const number = document.createElement("span");
+    const progress = document.createElement("span");
+    const customer = document.createElement("div");
+    const otherCustomers = document.createElement("div");
+    const cartonTypes = document.createElement("div");
+
+    card.type = "button";
+    card.className = `drop-card${complete ? " complete" : ""}`;
+    card.addEventListener("click", () =>
+      openScannerForDrop(drop.dropId)
+    );
+
+    top.className = "drop-card-top";
+    number.className = "drop-number";
+    progress.className = "drop-progress";
+    customer.className = "customer-name";
+    otherCustomers.className = "other-customers";
+    cartonTypes.className = "carton-types";
+
+    number.textContent = `Drop ${drop.dropNumber}`;
+    progress.textContent = complete
+      ? "COMPLETE"
+      : `${scannedCount}/${drop.cartons.length} scanned`;
+    customer.textContent = drop.customers[0] || "Unknown customer";
+    otherCustomers.textContent = drop.customers.length > 1
+      ? `Also: ${drop.customers.slice(1).join(", ")}`
+      : "";
+    cartonTypes.textContent = formatCartonTypes(drop.cartons);
+
+    top.append(number, progress);
+    card.append(top, customer);
+
+    if (otherCustomers.textContent) {
+      card.append(otherCustomers);
+    }
+
+    card.append(cartonTypes);
+    dropListBox.append(card);
+  });
+
+  renderPendingSync();
+}
+
+function cleanCustomerName(value) {
+  return String(value || "Unknown customer")
     .replace(/^.*?\*\s*JOBSITE\s*\*\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
+}
 
-  dropIdBox.textContent = activeDropName;
+function formatCartonTypes(cartons) {
+  const typeCounts = new Map();
+
+  cartons.forEach(carton => {
+    const type = String(carton.cartonType || "Carton").trim();
+    typeCounts.set(type, (typeCounts.get(type) || 0) + 1);
+  });
+
+  return [...typeCounts.entries()]
+    .map(([type, count]) =>
+      `${count} ${count === 1 ? type : pluralizeType(type)}`
+    )
+    .join(" • ");
+}
+
+function pluralizeType(type) {
+  const lowerType = type.toLowerCase();
+  const specialPlurals = {
+    box: "Boxes",
+    bundle: "Bundles",
+    stick: "Sticks",
+    skid: "Skids",
+    pallet: "Pallets",
+    coil: "Coils",
+    carton: "Cartons"
+  };
+
+  if (specialPlurals[lowerType]) {
+    return specialPlurals[lowerType];
+  }
+
+  return /s$/i.test(type) ? type : `${type}s`;
 }
 
 async function startScanner() {
   document.body.classList.remove("scan-error");
-  if (scannerRunning) return;
+  if (scannerRunning || !activeDropId) return;
 
-  audioContext = new (
+  audioContext = audioContext || new (
     window.AudioContext || window.webkitAudioContext
   )();
 
@@ -534,6 +822,16 @@ async function startScanner() {
     statusBox.textContent =
       error.message || "Unable to start the camera.";
   }
+}
+
+function stopScanner() {
+  if (scannerRunning) {
+    codeReader.reset();
+  }
+
+  scannerRunning = false;
+  startButton.disabled = !cartonDataReady;
+  startButton.textContent = "Start Scanner";
 }
 
 function updateProgress() {
@@ -594,7 +892,7 @@ function handleScan(rawValue) {
 
     hardStop(
       "WRONG DROP",
-      `${barcode} belongs to Drop ${carton.dropNumber}\n${carton.customer}`
+      `${barcode} belongs to Drop ${carton.dropNumber}\n${cleanCustomerName(carton.customer)}`
     );
     return;
   }
@@ -620,6 +918,7 @@ function handleScan(rawValue) {
   resultBox.textContent = barcode;
   statusBox.textContent = `Correct: ${barcode}`;
   updateProgress();
+  renderRoutePage();
   playBeep();
 
   if (navigator.vibrate) {
@@ -634,8 +933,7 @@ function handleScan(rawValue) {
 }
 
 function hardStop(title, message) {
-  codeReader.reset();
-  scannerRunning = false;
+  stopScanner();
   startButton.disabled = false;
   startButton.textContent = "Resume Scanning";
 
