@@ -40,6 +40,7 @@ const codeReader = new ZXing.BrowserMultiFormatReader(hints);
 startButton.addEventListener("click", startScanner);
 window.addEventListener("online", syncPendingRecords);
 
+resetLocalDropIfRequested();
 loadCartonData();
 setInterval(syncPendingRecords, 15000);
 
@@ -55,6 +56,60 @@ function readStoredJson(key, fallback) {
 
 function writeStoredJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
+}
+
+function resetLocalDropIfRequested() {
+  if (urlParams.get("resetScans") !== "1") return;
+
+  const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
+  const dropCartonNumbers = new Set(
+    (cachedData?.cartons || [])
+      .filter(carton => carton.dropId === activeDropId)
+      .map(carton =>
+        String(carton.cartonNumber).trim().toUpperCase()
+      )
+  );
+
+  if (dropCartonNumbers.size) {
+    const accepted = readStoredJson(ACCEPTED_KEY, [])
+      .map(value => String(value).trim().toUpperCase())
+      .filter(cartonNumber =>
+        !dropCartonNumbers.has(cartonNumber)
+      );
+
+    writeStoredJson(ACCEPTED_KEY, accepted);
+
+    cachedData.scannedCartons =
+      (cachedData.scannedCartons || [])
+        .map(value => String(value).trim().toUpperCase())
+        .filter(cartonNumber =>
+          !dropCartonNumbers.has(cartonNumber)
+        );
+
+    writeStoredJson(ROUTE_CACHE_KEY, cachedData);
+  } else {
+    localStorage.removeItem(ACCEPTED_KEY);
+  }
+
+  const queue = readStoredJson(SYNC_QUEUE_KEY, []);
+
+  if (Array.isArray(queue)) {
+    const retainedQueue = queue.filter(record =>
+      !(
+        String(record.shippingEvent) === shippingEvent &&
+        String(record.dropId) === activeDropId
+      )
+    );
+
+    writeStoredJson(SYNC_QUEUE_KEY, retainedQueue);
+  }
+
+  const cleanUrl = new URL(window.location.href);
+  cleanUrl.searchParams.delete("resetScans");
+  window.history.replaceState({}, "", cleanUrl.toString());
+
+  resultBox.textContent =
+    "Local test scans reset for this drop.";
 }
 
 function getAcceptedCartons() {
