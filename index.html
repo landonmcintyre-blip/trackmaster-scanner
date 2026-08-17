@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=19">
+  <link rel="stylesheet" href="style.css?v=18">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -66,61 +66,51 @@
         </div>
       </header>
 
-      <div class="scanner-layout">
-        <section class="scanner-window">
-          <video id="camera" playsinline></video>
+      <section class="scanner-window">
+        <video id="camera" playsinline></video>
 
-          <div class="scanner-guide" aria-hidden="true"></div>
+        <div class="scanner-guide" aria-hidden="true"></div>
 
-          <div class="orientation-hint" aria-hidden="true">
-            Landscape scanner
-          </div>
+        <div class="orientation-hint" aria-hidden="true">
+          Scan in any direction
+        </div>
 
-          <button
-            id="flashlight-button"
-            class="flashlight-button"
-            type="button"
-            aria-label="Turn flashlight on"
-            aria-pressed="false"
-            hidden
-          >
-            <span aria-hidden="true">&#128294;</span>
-          </button>
+        <button
+          id="flashlight-button"
+          class="flashlight-button"
+          type="button"
+          aria-label="Turn flashlight on"
+          aria-pressed="false"
+          hidden
+        >
+          <span aria-hidden="true">&#128294;</span>
+        </button>
+      </section>
 
-          <div class="rotate-device-overlay" aria-hidden="true">
-            <span class="rotate-device-icon">&#8635;</span>
-            <strong>Rotate phone sideways to scan</strong>
-            <span>The route screen stays portrait.</span>
-          </div>
-        </section>
-
-        <aside class="scanner-controls">
-          <div id="status" class="status">
-            Select a drop to begin
-          </div>
-
-          <button id="start-button" class="primary-button" type="button">
-            Start Scanner
-          </button>
-
-          <button id="test-reset-button" class="test-reset-button" type="button">
-            TEST: Reset This Drop
-          </button>
-
-          <section class="results">
-            <h2>Last scanned carton</h2>
-            <div id="scan-result">None</div>
-
-            <h2>Scan count</h2>
-            <div id="scan-count">0</div>
-            <div id="remaining-count">0 cartons remaining</div>
-          </section>
-        </aside>
+      <div id="status" class="status">
+        Select a drop to begin
       </div>
+
+      <button id="start-button" class="primary-button" type="button">
+        Start Scanner
+      </button>
+
+      <button id="test-reset-button" class="test-reset-button" type="button">
+        TEST: Reset This Drop
+      </button>
+
+      <section class="results">
+        <h2>Last scanned carton</h2>
+        <div id="scan-result">None</div>
+
+        <h2>Scan count</h2>
+        <div id="scan-count">0</div>
+        <div id="remaining-count">0 cartons remaining</div>
+      </section>
     </section>
   </main>
 
-  <script src="scanner.js?v=19"></script>
+  <script src="scanner.js?v=18"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
