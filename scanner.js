@@ -176,95 +176,32 @@ async function loadCartonData() {
       throw new Error("No active drop was provided.");
     }
 
-    let data;
-    let usingCachedRoute = false;
+    const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
 
-    try {
-      const response = await fetch(
-        `${API_URL}?shippingEvent=${encodeURIComponent(shippingEvent)}`
-      );
+    if (cachedData?.cartons?.length) {
+      applyCartonData(cachedData);
 
-      if (!response.ok) {
-        throw new Error("Could not reach carton data.");
-      }
+      cartonDataReady = true;
+      startButton.disabled = false;
+      startButton.textContent = "Start Scanner";
+      statusBox.textContent =
+        `Ready from phone — ${activeDropTotal} cartons for this drop`;
 
-      const serverData = await response.json();
-
-      if (!serverData.success) {
-        throw new Error(serverData.error || "Carton data failed to load.");
-      }
-
-      if (!Array.isArray(serverData.cartons) || !serverData.cartons.length) {
-        throw new Error("The server returned an empty route.");
-      }
-
-      data = serverData;
-      writeStoredJson(ROUTE_CACHE_KEY, serverData);
-    } catch (networkError) {
-      const cachedData = readStoredJson(ROUTE_CACHE_KEY, null);
-
-      if (!cachedData?.cartons?.length) {
-        throw networkError;
-      }
-
-      data = cachedData;
-      usingCachedRoute = true;
+      refreshCartonDataInBackground();
+      syncPendingRecords();
+      return;
     }
 
-    cartonLookup = new Map(
-      data.cartons.map(carton => [
-        carton.cartonNumber.toUpperCase(),
-        carton
-      ])
-    );
+    const serverData = await fetchCartonDataFromServer();
 
-    const activeDropCartons = data.cartons.filter(
-      carton => carton.dropId === activeDropId
-    );
+    writeStoredJson(ROUTE_CACHE_KEY, serverData);
+    applyCartonData(serverData);
 
-    if (!activeDropCartons.length) {
-      throw new Error("No cartons were found for this drop.");
-    }
-
-    const activeDropNumbers = new Set(
-      activeDropCartons.map(carton =>
-        carton.cartonNumber.toUpperCase()
-      )
-    );
-
-    scannedCartons.clear();
-
-    const knownAccepted = new Set([
-      ...(data.scannedCartons || []).map(value =>
-        String(value).toUpperCase()
-      ),
-      ...getAcceptedCartons()
-    ]);
-
-    knownAccepted.forEach(cartonNumber => {
-      if (activeDropNumbers.has(cartonNumber)) {
-        scannedCartons.add(cartonNumber);
-      }
-    });
-
-    activeDropTotal = activeDropCartons.length;
-    updateProgress();
-
-    const rawDropName =
-      activeDropCartons[0]?.customer || "Unknown stop";
-
-    const activeDropName = rawDropName
-      .replace(/^.*?\*\s*JOBSITE\s*\*\s*/i, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    dropIdBox.textContent = activeDropName;
     cartonDataReady = true;
     startButton.disabled = false;
     startButton.textContent = "Start Scanner";
-    statusBox.textContent = usingCachedRoute
-      ? `Offline ready — ${activeDropTotal} cartons for this drop`
-      : `Ready — ${activeDropTotal} cartons for this drop`;
+    statusBox.textContent =
+      `Ready — ${activeDropTotal} cartons for this drop`;
 
     syncPendingRecords();
   } catch (error) {
@@ -274,6 +211,98 @@ async function loadCartonData() {
     statusBox.textContent =
       error.message || "Unable to load carton data.";
   }
+}
+
+async function fetchCartonDataFromServer() {
+  const response = await fetch(
+    `${API_URL}?shippingEvent=${encodeURIComponent(shippingEvent)}`
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not reach carton data.");
+  }
+
+  const serverData = await response.json();
+
+  if (!serverData.success) {
+    throw new Error(serverData.error || "Carton data failed to load.");
+  }
+
+  if (!Array.isArray(serverData.cartons) || !serverData.cartons.length) {
+    throw new Error("The server returned an empty route.");
+  }
+
+  return serverData;
+}
+
+async function refreshCartonDataInBackground() {
+  try {
+    const serverData = await fetchCartonDataFromServer();
+
+    writeStoredJson(ROUTE_CACHE_KEY, serverData);
+    applyCartonData(serverData);
+
+    if (
+      !scannerRunning &&
+      !document.body.classList.contains("scan-error")
+    ) {
+      statusBox.textContent =
+        `Ready — ${activeDropTotal} cartons for this drop`;
+    }
+  } catch (error) {
+    console.error("Route refresh paused:", error);
+  }
+}
+
+function applyCartonData(data) {
+  cartonLookup = new Map(
+    data.cartons.map(carton => [
+      carton.cartonNumber.toUpperCase(),
+      carton
+    ])
+  );
+
+  const activeDropCartons = data.cartons.filter(
+    carton => carton.dropId === activeDropId
+  );
+
+  if (!activeDropCartons.length) {
+    throw new Error("No cartons were found for this drop.");
+  }
+
+  const activeDropNumbers = new Set(
+    activeDropCartons.map(carton =>
+      carton.cartonNumber.toUpperCase()
+    )
+  );
+
+  scannedCartons.clear();
+
+  const knownAccepted = new Set([
+    ...(data.scannedCartons || []).map(value =>
+      String(value).toUpperCase()
+    ),
+    ...getAcceptedCartons()
+  ]);
+
+  knownAccepted.forEach(cartonNumber => {
+    if (activeDropNumbers.has(cartonNumber)) {
+      scannedCartons.add(cartonNumber);
+    }
+  });
+
+  activeDropTotal = activeDropCartons.length;
+  updateProgress();
+
+  const rawDropName =
+    activeDropCartons[0]?.customer || "Unknown stop";
+
+  const activeDropName = rawDropName
+    .replace(/^.*?\*\s*JOBSITE\s*\*\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  dropIdBox.textContent = activeDropName;
 }
 
 async function startScanner() {
