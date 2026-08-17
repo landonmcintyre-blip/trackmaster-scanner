@@ -11,7 +11,7 @@ const activeDropId = urlParams.get("dropId");
 const shippingEvent = activeDropId?.split("-")[0] || "";
 
 const API_URL =
-  "https://script.google.com/macros/s/AKfycbwVuvB6tfS4qUUarTiCr1EFaeAINjyWcw0IBfc8nUDrfgDKNy1tZ7BkJzUokC8ShKJiAw/exec";
+  "https://script.google.com/macros/s/AKfycby-XWD-6dWtzXHG1PtTy03Km326GsCmy3j4aKjJwa-0mRQI1w73iAsqc1ocr8XLeuEYog/exec";
 
 const ROUTE_CACHE_KEY = `trackmaster-route-${shippingEvent}`;
 const ACCEPTED_KEY = `trackmaster-accepted-${shippingEvent}`;
