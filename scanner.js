@@ -15,18 +15,12 @@ const assignedRouteList = document.getElementById(
 const refreshAssignedRoutesButton = document.getElementById(
   "refresh-assigned-routes"
 );
+const myRoutesButton = document.getElementById("my-routes-button");
 const signOutButtons = document.querySelectorAll(".sign-out-button");
 const routePage = document.getElementById("route-page");
 const scannerPage = document.getElementById("scanner-page");
 const routeNameBox = document.getElementById("route-name");
 const routeMetaBox = document.getElementById("route-meta");
-const routeProgressBox = document.getElementById("route-progress");
-const routeSummaryLabel = document.getElementById(
-  "route-summary-label"
-);
-const resumeScanningButton = document.getElementById(
-  "resume-scanning-button"
-);
 const routeMessageBox = document.getElementById("route-message");
 const dropListBox = document.getElementById("drop-list");
 const networkStatusBox = document.getElementById("network-status");
@@ -54,6 +48,7 @@ const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
 
 const urlParams = new URLSearchParams(window.location.search);
+const forceRoutePicker = urlParams.get("chooseRoute") === "1";
 const requestedDropId = String(urlParams.get("dropId") || "").trim();
 const requestedShippingEvent = String(
   urlParams.get("shippingEvent") || ""
@@ -68,7 +63,9 @@ const linkedShippingEvent =
 
 const shippingEvent =
   linkedShippingEvent ||
-  (!navigator.onLine ? rememberedShippingEvent : "");
+  (!navigator.onLine && !forceRoutePicker
+    ? rememberedShippingEvent
+    : "");
 
 const ROUTE_CACHE_KEY =
   `trackmaster-route-${shippingEvent || "missing"}`;
@@ -166,12 +163,12 @@ refreshAssignedRoutesButton.addEventListener(
   "click",
   () => loadAssignedRoutes(true)
 );
+myRoutesButton.addEventListener("click", showMyRoutes);
 signOutButtons.forEach(button => {
   button.addEventListener("click", signOutDriver);
 });
 startButton.addEventListener("click", startScanner);
 flashlightButton.addEventListener("click", toggleFlashlight);
-resumeScanningButton.addEventListener("click", resumeScanning);
 backToRouteButton.addEventListener("click", showRoutePage);
 refreshRouteButton.addEventListener("click", refreshRouteManually);
 resetButton.addEventListener("click", resetCurrentDropForTesting);
@@ -294,7 +291,7 @@ function openTrackMaster() {
 
   appStarted = true;
 
-  if (shippingEvent) {
+  if (shippingEvent && !forceRoutePicker) {
     routePage.hidden = false;
     loadCartonData();
     return;
@@ -397,7 +394,7 @@ function displayAssignedRoutes(routes, fromCache) {
     return;
   }
 
-  if (routes.length === 1) {
+  if (routes.length === 1 && !forceRoutePicker) {
     openAssignedRoute(routes[0].shippingEvent);
     return;
   }
@@ -449,6 +446,15 @@ function signOutDriver() {
   const cleanUrl = new URL(window.location.href);
   cleanUrl.search = "";
   window.location.replace(cleanUrl.toString());
+}
+
+function showMyRoutes() {
+  stopScanner();
+
+  const routesUrl = new URL(window.location.href);
+  routesUrl.search = "";
+  routesUrl.searchParams.set("chooseRoute", "1");
+  window.location.assign(routesUrl.toString());
 }
 
 function readStoredJson(key, fallback) {
@@ -939,31 +945,6 @@ function openScannerForDrop(dropId) {
   window.scrollTo(0, 0);
 }
 
-function resumeScanning() {
-  if (!routeData?.cartons?.length) return;
-
-  const knownAccepted = getKnownAcceptedCartons();
-  const orderedCartons = [...routeData.cartons].sort(
-    (a, b) => Number(a.dropNumber) - Number(b.dropNumber)
-  );
-  const cartonIsRemaining = carton =>
-    !knownAccepted.has(
-      String(carton.cartonNumber).trim().toUpperCase()
-    );
-  const activeDropHasRemaining = orderedCartons.some(carton =>
-    carton.dropId === activeDropId && cartonIsRemaining(carton)
-  );
-  const nextCarton = activeDropHasRemaining
-    ? orderedCartons.find(carton =>
-        carton.dropId === activeDropId && cartonIsRemaining(carton)
-      )
-    : orderedCartons.find(cartonIsRemaining);
-
-  if (nextCarton) {
-    openScannerForDrop(nextCarton.dropId);
-  }
-}
-
 function applyActiveDropData() {
   if (!routeData || !activeDropId) return;
 
@@ -1048,39 +1029,34 @@ function renderRoutePage() {
     drop.cartons.push(carton);
   });
 
-  const drops = [...dropMap.values()].sort(
-    (a, b) => a.dropNumber - b.dropNumber
-  );
   const knownAccepted = getKnownAcceptedCartons();
-  const routeCartonNumbers = new Set(
-    routeData.cartons.map(carton =>
-      String(carton.cartonNumber).trim().toUpperCase()
-    )
-  );
-  const routeScannedCount = [...knownAccepted].filter(
-    cartonNumber => routeCartonNumbers.has(cartonNumber)
-  ).length;
+  const drops = [...dropMap.values()]
+    .map(drop => {
+      const scannedCount = drop.cartons.filter(carton =>
+        knownAccepted.has(
+          String(carton.cartonNumber).trim().toUpperCase()
+        )
+      ).length;
+      const complete = scannedCount === drop.cartons.length;
+      const started = scannedCount > 0 && !complete;
 
-  routeProgressBox.textContent =
-    `${routeScannedCount} of ${routeData.cartons.length} cartons scanned`;
-  const routeComplete =
-    routeScannedCount === routeData.cartons.length;
+      return {
+        ...drop,
+        scannedCount,
+        complete,
+        started
+      };
+    })
+    .sort((a, b) => {
+      const rank = drop =>
+        drop.started ? 0 : drop.complete ? 2 : 1;
 
-  resumeScanningButton.disabled = routeComplete;
-  resumeScanningButton.classList.toggle("complete", routeComplete);
-  routeSummaryLabel.textContent = routeComplete
-    ? "Route complete"
-    : "Route progress · Tap to resume";
+      return rank(a) - rank(b) || a.dropNumber - b.dropNumber;
+    });
 
   dropListBox.replaceChildren();
 
   drops.forEach(drop => {
-    const scannedCount = drop.cartons.filter(carton =>
-      knownAccepted.has(
-        String(carton.cartonNumber).trim().toUpperCase()
-      )
-    ).length;
-    const complete = scannedCount === drop.cartons.length;
     const card = document.createElement("button");
     const top = document.createElement("div");
     const number = document.createElement("span");
@@ -1090,7 +1066,11 @@ function renderRoutePage() {
     const cartonTypes = document.createElement("div");
 
     card.type = "button";
-    card.className = `drop-card${complete ? " complete" : ""}`;
+    card.className = "drop-card";
+
+    if (drop.complete) card.classList.add("complete");
+    if (drop.started) card.classList.add("in-progress");
+
     card.addEventListener("click", () =>
       openScannerForDrop(drop.dropId)
     );
@@ -1103,9 +1083,11 @@ function renderRoutePage() {
     cartonTypes.className = "carton-types";
 
     number.textContent = `Drop ${drop.dropNumber}`;
-    progress.textContent = complete
+    progress.textContent = drop.complete
       ? "COMPLETE"
-      : `${scannedCount}/${drop.cartons.length} scanned`;
+      : drop.started
+        ? `IN PROGRESS · ${drop.scannedCount}/${drop.cartons.length}`
+        : `${drop.cartons.length} CARTONS`;
     customer.textContent = drop.customers[0] || "Unknown customer";
     otherCustomers.textContent = drop.customers.length > 1
       ? `Also: ${drop.customers.slice(1).join(", ")}`

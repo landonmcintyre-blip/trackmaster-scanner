@@ -166,6 +166,18 @@ h1 {
   cursor: pointer;
 }
 
+.my-routes-button {
+  margin: 0 0 12px;
+  padding: 7px 10px;
+  border: 1px solid #4b5563;
+  border-radius: 9px;
+  background: transparent;
+  color: #d1d5db;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .assigned-route-card {
   width: 100%;
   padding: 18px;
@@ -193,40 +205,6 @@ h1 {
   font-size: 14px;
 }
 
-.route-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  gap: 12px;
-  margin-bottom: 14px;
-  padding: 15px;
-  border: 1px solid #374151;
-  border-radius: 12px;
-  background: #1f2937;
-  color: #f9fafb;
-  cursor: pointer;
-  text-align: left;
-}
-
-.route-summary:active:not(:disabled) {
-  transform: scale(0.99);
-}
-
-.route-summary.complete {
-  border-color: #166534;
-  background: #14532d;
-  cursor: default;
-}
-
-.route-summary:disabled {
-  opacity: 1;
-}
-
-.summary-progress-block {
-  display: block;
-}
-
 .summary-label {
   display: block;
   margin-bottom: 4px;
@@ -237,15 +215,16 @@ h1 {
   text-transform: uppercase;
 }
 
-#route-progress {
-  font-size: 18px;
-}
-
 .pending-sync {
   color: #fdba74;
   font-size: 13px;
   font-weight: 800;
   text-align: right;
+}
+
+.route-sync-status {
+  min-height: 18px;
+  margin: -5px 2px 14px;
 }
 
 .route-message {
@@ -285,6 +264,16 @@ h1 {
 .drop-card.complete {
   border-color: #22c55e;
   background: #14532d;
+}
+
+.drop-card.in-progress {
+  border-color: #f97316;
+  background: #7c2d12;
+}
+
+.drop-card.in-progress .drop-number,
+.drop-card.in-progress .drop-progress {
+  color: #fed7aa;
 }
 
 .drop-card-top {
@@ -407,27 +396,15 @@ h1 {
 
 .scanner-guide {
   position: absolute;
-  inset: 12%;
+  top: 50%;
+  left: 7%;
+  right: 7%;
+  height: 34%;
+  transform: translateY(-50%);
   pointer-events: none;
   border: 2px solid rgb(255 255 255 / 72%);
   border-radius: 16px;
   box-shadow: 0 0 0 999px rgb(0 0 0 / 8%);
-}
-
-.orientation-hint {
-  position: absolute;
-  left: 14px;
-  bottom: 14px;
-  max-width: calc(100% - 88px);
-  padding: 7px 10px;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 68%);
-  color: white;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.03em;
-  pointer-events: none;
-  text-transform: uppercase;
 }
 
 .flashlight-button {
@@ -556,7 +533,9 @@ body.scan-error .status {
   }
 
   .scanner-guide {
-    inset: 10%;
+    left: 8%;
+    right: 8%;
+    height: 46%;
   }
 
   .status {

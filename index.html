@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=21">
+  <link rel="stylesheet" href="style.css?v=23">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -89,6 +89,9 @@
     <section id="route-page" class="route-page" hidden>
       <header class="app-header">
         <div>
+          <button id="my-routes-button" class="my-routes-button" type="button">
+            ← My Routes
+          </button>
           <div class="brand">TRACKMASTER</div>
           <h1 id="route-name">Loading route…</h1>
           <div id="route-meta" class="route-meta"></div>
@@ -104,23 +107,11 @@
         </div>
       </header>
 
-      <button
-        id="resume-scanning-button"
-        class="route-summary"
-        type="button"
-      >
-        <span class="summary-progress-block">
-          <span id="route-summary-label" class="summary-label">
-            Route progress · Tap to resume
-          </span>
-          <strong id="route-progress">Loading carton data…</strong>
-        </span>
-        <span id="pending-sync" class="pending-sync"></span>
-      </button>
-
       <div id="route-message" class="route-message">
         Loading today’s drops…
       </div>
+
+      <div id="pending-sync" class="pending-sync route-sync-status"></div>
 
       <section id="drop-list" class="drop-list"></section>
 
@@ -145,10 +136,6 @@
         <video id="camera" playsinline></video>
 
         <div class="scanner-guide" aria-hidden="true"></div>
-
-        <div class="orientation-hint" aria-hidden="true">
-          Scan in any direction
-        </div>
 
         <button
           id="flashlight-button"
@@ -185,7 +172,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=21"></script>
+  <script src="scanner.js?v=23"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
