@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=24.2">
+  <link rel="stylesheet" href="style.css?v=26.2">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -169,6 +169,15 @@
         >
           <span aria-hidden="true">&#128294;</span>
         </button>
+
+        <button
+          id="manual-entry-button"
+          class="manual-entry-button"
+          type="button"
+          aria-label="Enter carton manually"
+        >
+          <span aria-hidden="true">&#9000;</span>
+        </button>
       </section>
 
       <div id="status" class="status">
@@ -177,6 +186,10 @@
 
       <button id="start-button" class="primary-button" type="button">
         Start Scanner
+      </button>
+
+      <button id="open-damage-scanner" class="report-damage-button scanner-damage-button" type="button">
+        Report Damage
       </button>
 
       <button id="test-reset-button" class="test-reset-button" type="button">
@@ -192,9 +205,165 @@
         <div id="remaining-count">0 cartons remaining</div>
       </section>
     </section>
+
+    <section id="damage-form-page" class="damage-form-page" hidden>
+      <header class="scanner-header">
+        <button id="damage-form-cancel" class="back-button" type="button">
+          ← Cancel
+        </button>
+        <div>
+          <span class="summary-label">Damage report</span>
+          <h1 id="damage-carton-number">Select carton</h1>
+        </div>
+      </header>
+
+      <div id="damage-carton-details" class="damage-carton-details"></div>
+
+      <form id="damage-form" class="damage-form" novalidate>
+        <label for="damage-type">Damage type</label>
+        <select id="damage-type" required>
+          <option value="Bent/Dented" selected>Bent/Dented</option>
+          <option value="Scratched">Scratched</option>
+          <option value="Crushed">Crushed</option>
+          <option value="Paint/Coating Defect">Paint/coating defect</option>
+          <option value="Manufacturing Defect">Manufacturing defect</option>
+          <option value="Other">Other</option>
+        </select>
+
+        <label for="damage-panel-count">Estimated number of affected panels</label>
+        <input id="damage-panel-count" type="number" inputmode="numeric" min="1" step="1" placeholder="Best estimate">
+
+        <label for="damage-description">Damage description</label>
+        <textarea id="damage-description" minlength="5" maxlength="1000" placeholder="Briefly describe the damage…" required></textarea>
+        <div id="damage-description-count" class="field-help">Minimum 5 characters</div>
+
+        <fieldset class="damage-photo-group">
+          <legend>Required product photos</legend>
+          <div id="product-photo-fields" class="photo-field-list"></div>
+        </fieldset>
+
+        <fieldset class="damage-photo-group">
+          <legend>Damage photos</legend>
+          <p>At least 2 close-ups are required. Add as many as needed.</p>
+          <div class="damage-photo-actions">
+            <input id="damage-camera-input" type="file" accept="image/*" capture="environment">
+            <button id="take-damage-photo" class="secondary-button" type="button">Take Damage Photo</button>
+            <input id="damage-photo-input" type="file" accept="image/*" multiple>
+            <button id="add-damage-photos" class="photo-library-button" type="button" aria-label="Add from photos">
+              <span aria-hidden="true">🖼️</span>
+            </button>
+          </div>
+          <div id="damage-photo-count" class="photo-progress">0 damage photos added</div>
+          <div id="damage-photo-previews" class="damage-photo-previews"></div>
+        </fieldset>
+
+        <label for="customer-disposition">Customer disposition</label>
+        <select id="customer-disposition" required>
+          <option value="" selected disabled>Select disposition…</option>
+          <option value="Customer Accepted">Customer accepted</option>
+          <option value="Customer Rejected">Customer rejected — remains on truck</option>
+          <option value="Customer Not Present">Customer not present / unable to confirm</option>
+        </select>
+
+        <div id="damage-form-message" class="login-message" role="alert"></div>
+        <button id="submit-damage-report" class="primary-button" type="submit">Submit Damage Report</button>
+      </form>
+    </section>
+
+    <section id="damage-complete-page" class="damage-form-page" hidden>
+      <div class="damage-complete-card">
+        <div class="damage-complete-icon">✓</div>
+        <h1>Damage Report Saved</h1>
+        <p id="damage-complete-summary"></p>
+        <button id="report-more-damage" class="primary-button" type="button">Report More Damage</button>
+        <button id="return-to-drop" class="secondary-button" type="button">Return to Drop</button>
+      </div>
+    </section>
+
+    <section id="manual-entry-page" class="manual-entry-page" hidden>
+      <header class="scanner-header">
+        <button id="manual-entry-cancel" class="back-button" type="button">
+          ← Scanner
+        </button>
+
+        <div>
+          <span class="summary-label">Manual verification</span>
+          <h1>Enter Carton</h1>
+        </div>
+      </header>
+
+      <form id="manual-entry-form" class="manual-entry-form" novalidate>
+        <label for="manual-carton-number">Carton number</label>
+        <div class="carton-number-input">
+          <span>C</span>
+          <input
+            id="manual-carton-number"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            autocomplete="off"
+            placeholder="830789"
+            required
+          >
+        </div>
+
+        <section id="manual-explanation-section" hidden>
+          <label for="manual-explanation">
+            Explain why this carton requires manual entry
+          </label>
+          <textarea
+            id="manual-explanation"
+            minlength="10"
+            maxlength="500"
+            placeholder="Enter a useful explanation…"
+          ></textarea>
+          <div id="manual-explanation-count" class="field-help">
+            Minimum 10 characters
+          </div>
+        </section>
+
+        <fieldset class="tag-status-options">
+          <legend>Tag condition</legend>
+          <label>
+            <input type="radio" name="tag-status" value="Won't Scan" checked>
+            Barcode won’t scan
+          </label>
+          <label>
+            <input type="radio" name="tag-status" value="Tag Missing">
+            Tag missing
+          </label>
+          <label>
+            <input type="radio" name="tag-status" value="Other">
+            Other
+          </label>
+        </fieldset>
+
+        <section id="manual-photo-section">
+          <section class="manual-photo-box">
+            <video id="manual-photo-camera" playsinline muted></video>
+            <img id="manual-photo-preview" alt="Captured carton evidence" hidden>
+            <canvas id="manual-photo-canvas" hidden></canvas>
+          </section>
+
+          <button id="capture-manual-photo" class="secondary-button" type="button">
+            Take Required Photo
+          </button>
+          <div id="manual-photo-help" class="field-help">
+            Photograph the carton tag and unreadable barcode.
+          </div>
+          <div id="manual-photo-progress" class="photo-progress"></div>
+        </section>
+
+        <div id="manual-entry-message" class="login-message" role="alert"></div>
+
+        <button id="submit-manual-entry" class="primary-button" type="submit">
+          Verify Carton Manually
+        </button>
+      </form>
+    </section>
   </main>
 
-  <script src="scanner.js?v=24.2"></script>
+  <script src="scanner.js?v=26.2"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

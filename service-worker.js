@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v24-verified-found-carton";
+const CACHE_NAME = "trackmaster-shell-v26.2-damage-scanner";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,8 +10,8 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("style.css?v=24.2", APP_SCOPE).href,
-  new URL("scanner.js?v=24.2", APP_SCOPE).href,
+  new URL("style.css?v=26.2", APP_SCOPE).href,
+  new URL("scanner.js?v=26.2", APP_SCOPE).href,
   ZXING_URL
 ];
 

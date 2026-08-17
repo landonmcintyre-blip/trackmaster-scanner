@@ -31,6 +31,25 @@ const overviewCartonList = document.getElementById(
   "overview-carton-list"
 );
 const scannerPage = document.getElementById("scanner-page");
+const manualEntryPage = document.getElementById("manual-entry-page");
+const manualEntryButton = document.getElementById("manual-entry-button");
+const manualEntryCancelButton = document.getElementById("manual-entry-cancel");
+const manualEntryForm = document.getElementById("manual-entry-form");
+const manualCartonNumber = document.getElementById("manual-carton-number");
+const manualExplanation = document.getElementById("manual-explanation");
+const manualExplanationSection = document.getElementById(
+  "manual-explanation-section"
+);
+const manualExplanationCount = document.getElementById("manual-explanation-count");
+const manualPhotoCamera = document.getElementById("manual-photo-camera");
+const manualPhotoPreview = document.getElementById("manual-photo-preview");
+const manualPhotoCanvas = document.getElementById("manual-photo-canvas");
+const captureManualPhotoButton = document.getElementById("capture-manual-photo");
+const manualPhotoHelp = document.getElementById("manual-photo-help");
+const manualPhotoSection = document.getElementById("manual-photo-section");
+const manualPhotoProgress = document.getElementById("manual-photo-progress");
+const manualEntryMessage = document.getElementById("manual-entry-message");
+const submitManualEntryButton = document.getElementById("submit-manual-entry");
 const routeNameBox = document.getElementById("route-name");
 const routeMetaBox = document.getElementById("route-meta");
 const routeMessageBox = document.getElementById("route-message");
@@ -53,6 +72,26 @@ const flashlightButton = document.getElementById(
 const resetButton = document.getElementById("test-reset-button");
 const dropIdBox = document.getElementById("drop-id");
 const remainingBox = document.getElementById("remaining-count");
+const openDamageScannerButton = document.getElementById("open-damage-scanner");
+const damageFormPage = document.getElementById("damage-form-page");
+const damageCompletePage = document.getElementById("damage-complete-page");
+const damageForm = document.getElementById("damage-form");
+const damageFormCancel = document.getElementById("damage-form-cancel");
+const damageCartonNumber = document.getElementById("damage-carton-number");
+const damageCartonDetails = document.getElementById("damage-carton-details");
+const damageDescription = document.getElementById("damage-description");
+const damageDescriptionCount = document.getElementById("damage-description-count");
+const productPhotoFields = document.getElementById("product-photo-fields");
+const damagePhotoInput = document.getElementById("damage-photo-input");
+const damageCameraInput = document.getElementById("damage-camera-input");
+const takeDamagePhotoButton = document.getElementById("take-damage-photo");
+const addDamagePhotosButton = document.getElementById("add-damage-photos");
+const damagePhotoCount = document.getElementById("damage-photo-count");
+const damagePhotoPreviews = document.getElementById("damage-photo-previews");
+const damageFormMessage = document.getElementById("damage-form-message");
+const damageCompleteSummary = document.getElementById("damage-complete-summary");
+const reportMoreDamageButton = document.getElementById("report-more-damage");
+const returnToDropButton = document.getElementById("return-to-drop");
 
 const API_URL =
   "https://script.google.com/macros/s/AKfycby-XWD-6dWtzXHG1PtTy03Km326GsCmy3j4aKjJwa-0mRQI1w73iAsqc1ocr8XLeuEYog/exec";
@@ -88,6 +127,8 @@ const ACCEPTED_KEY =
   `trackmaster-accepted-${shippingEvent || "missing"}`;
 const MISSING_KEY =
   `trackmaster-missing-${shippingEvent || "missing"}`;
+const DAMAGED_KEY =
+  `trackmaster-damaged-${shippingEvent || "missing"}`;
 
 let activeDropId = requestedDropId;
 let routeData = null;
@@ -104,6 +145,16 @@ let cameraTrack = null;
 let torchAvailable = false;
 let torchOn = false;
 let appStarted = false;
+let latestLocation = null;
+let locationWatchId = null;
+let locationPermissionDenied = false;
+let manualPhotoStream = null;
+let manualPhotos = [];
+let damageMode = false;
+let selectedDamageCarton = null;
+let productPhotos = new Map();
+let damagePhotos = [];
+let damageReturnScreen = "overview";
 
 const scannedCartons = new Set();
 
@@ -196,6 +247,39 @@ scannerOverviewButton.addEventListener("click", () => {
 });
 refreshRouteButton.addEventListener("click", refreshRouteManually);
 resetButton.addEventListener("click", resetCurrentDropForTesting);
+manualEntryButton.addEventListener("click", () => {
+  if (!damageMode) {
+    openManualEntry();
+    return;
+  }
+
+  const entered = window.prompt("Enter the damaged carton number:", "C");
+  if (entered === null) return;
+  const cartonNumber = String(entered).trim().toUpperCase().replace(/^C?/, "C");
+  identifyDamageCarton(cartonNumber, "scanner");
+});
+openDamageScannerButton.addEventListener("click", openDamageScanner);
+damageFormCancel.addEventListener("click", cancelDamageForm);
+damageForm.addEventListener("submit", submitDamageReport);
+damageDescription.addEventListener("input", updateDamageDescriptionCount);
+addDamagePhotosButton.addEventListener("click", () => damagePhotoInput.click());
+damagePhotoInput.addEventListener("change", addSelectedDamagePhotos);
+takeDamagePhotoButton.addEventListener("click", () => damageCameraInput.click());
+damageCameraInput.addEventListener("change", addSelectedDamagePhotos);
+reportMoreDamageButton.addEventListener("click", openDamageScanner);
+returnToDropButton.addEventListener("click", () => openDropOverview(activeDropId));
+manualEntryCancelButton.addEventListener("click", closeManualEntry);
+manualEntryForm.addEventListener("submit", submitManualEntry);
+captureManualPhotoButton.addEventListener("click", captureManualPhoto);
+manualCartonNumber.addEventListener("input", () => {
+  manualCartonNumber.value = manualCartonNumber.value
+    .replace(/\D/g, "")
+    .slice(0, 12);
+});
+manualExplanation.addEventListener("input", updateManualExplanationCount);
+document.querySelectorAll('input[name="tag-status"]').forEach(input => {
+  input.addEventListener("change", resetManualPhotos);
+});
 
 window.addEventListener("online", handleConnectionChange);
 window.addEventListener("offline", handleConnectionChange);
@@ -226,6 +310,9 @@ function initializeAuthentication() {
   routePage.hidden = true;
   dropOverviewPage.hidden = true;
   scannerPage.hidden = true;
+  manualEntryPage.hidden = true;
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = true;
   loginPhone.focus();
 }
 
@@ -340,6 +427,7 @@ async function loadAssignedRoutes(forceRefresh = false) {
   routePage.hidden = true;
   dropOverviewPage.hidden = true;
   scannerPage.hidden = true;
+  manualEntryPage.hidden = true;
   routePickerPage.hidden = false;
   driverWelcome.textContent = driver.driverName
     ? `Signed in as ${driver.driverName}`
@@ -468,6 +556,8 @@ function openAssignedRoute(assignedShippingEvent) {
 
 function signOutDriver() {
   stopScanner();
+  stopManualPhotoCamera();
+  stopLocationWatch();
   localStorage.removeItem(DRIVER_SESSION_KEY);
 
   const cleanUrl = new URL(window.location.href);
@@ -477,6 +567,7 @@ function signOutDriver() {
 
 function showMyRoutes() {
   stopScanner();
+  stopManualPhotoCamera();
 
   const routesUrl = new URL(window.location.href);
   routesUrl.search = "";
@@ -717,6 +808,99 @@ function createRecordId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+function saveLocation(position) {
+  latestLocation = {
+    latitude: Number(position.coords.latitude),
+    longitude: Number(position.coords.longitude),
+    accuracy: Math.round(Number(position.coords.accuracy) || 0),
+    capturedAt: new Date(
+      position.timestamp || Date.now()
+    ).toISOString()
+  };
+  locationPermissionDenied = false;
+}
+
+function getLocationMetadata() {
+  if (!latestLocation) {
+    return {
+      latitude: "",
+      longitude: "",
+      gpsAccuracy: "",
+      gpsStatus: "No GPS lock",
+      gpsCapturedAt: ""
+    };
+  }
+
+  return {
+    latitude: latestLocation.latitude,
+    longitude: latestLocation.longitude,
+    gpsAccuracy: latestLocation.accuracy,
+    gpsStatus: "GPS lock",
+    gpsCapturedAt: latestLocation.capturedAt
+  };
+}
+
+function startLocationWatch() {
+  if (!navigator.geolocation || locationWatchId !== null) return;
+
+  locationWatchId = navigator.geolocation.watchPosition(
+    saveLocation,
+    error => {
+      if (error.code === error.PERMISSION_DENIED) {
+        locationPermissionDenied = true;
+        stopLocationWatch();
+      }
+    },
+    {
+      enableHighAccuracy: true,
+      maximumAge: 15000,
+      timeout: 15000
+    }
+  );
+}
+
+function stopLocationWatch() {
+  if (locationWatchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(locationWatchId);
+  }
+
+  locationWatchId = null;
+}
+
+function ensureLocationAccess() {
+  return new Promise(resolve => {
+    if (!navigator.geolocation) {
+      latestLocation = null;
+      resolve(true);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        saveLocation(position);
+        startLocationWatch();
+        resolve(true);
+      },
+      error => {
+        if (error.code === error.PERMISSION_DENIED) {
+          locationPermissionDenied = true;
+          resolve(false);
+          return;
+        }
+
+        latestLocation = null;
+        startLocationWatch();
+        resolve(true);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 15000,
+        timeout: 7000
+      }
+    );
+  });
+}
+
 function queueRecord(record) {
   const queue = readStoredJson(SYNC_QUEUE_KEY, []);
 
@@ -740,18 +924,18 @@ function queueRecord(record) {
   renderPendingSync();
 }
 
-function queueSuccessfulScan(cartonNumber) {
+function queueSuccessfulScan(cartonNumber, details = {}) {
   const normalizedCartonNumber = String(cartonNumber)
     .trim()
     .toUpperCase();
   const wasReportedMissing =
     getMissingCartons().has(normalizedCartonNumber);
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
 
   forgetMissingCarton(normalizedCartonNumber);
   rememberAcceptedCarton(normalizedCartonNumber);
 
   if (wasReportedMissing) {
-    const driver = readStoredJson(DRIVER_SESSION_KEY, null);
     const driverLabel =
       driver?.driverName || driver?.driverId || "Unknown driver";
 
@@ -762,7 +946,8 @@ function queueSuccessfulScan(cartonNumber) {
       cartonNumber: normalizedCartonNumber,
       exceptionType: "Missing Item Found",
       notes:
-        `${driverLabel} scanned a carton previously reported missing.`
+        `${driverLabel} ${details.entryMethod === "Manual" ? "manually verified" : "scanned"} a carton previously reported missing.`,
+      ...getLocationMetadata()
     });
   }
 
@@ -770,20 +955,30 @@ function queueSuccessfulScan(cartonNumber) {
     action: "successfulScan",
     shippingEvent,
     dropId: activeDropId,
-    cartonNumber: normalizedCartonNumber
+    cartonNumber: normalizedCartonNumber,
+    entryMethod: details.entryMethod || "Barcode",
+    explanation: details.explanation || "",
+    tagStatus: details.tagStatus || "",
+    photoData: details.photoData || "",
+    driverId: details.driverId || driver?.driverId || "",
+    ...getLocationMetadata()
   });
 
   syncPendingRecords();
 }
 
 function queueScanException(cartonNumber, exceptionType, notes) {
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+
   queueRecord({
     action: "exception",
     shippingEvent,
     dropId: activeDropId,
     cartonNumber,
     exceptionType,
-    notes
+    notes,
+    driverId: driver?.driverId || "",
+    ...getLocationMetadata()
   });
 
   syncPendingRecords();
@@ -812,7 +1007,9 @@ async function syncPendingRecords() {
         action: "syncBatch",
         records: submittedQueue
       }),
-      keepalive: true
+      keepalive: !submittedQueue.some(record =>
+        record.photoData || record.productPhotos || record.damagePhotos
+      )
     });
 
     if (!response.ok) {
@@ -1001,8 +1198,13 @@ function showRequestedStartingScreen() {
 
 function showRoutePage() {
   stopScanner();
+  stopManualPhotoCamera();
+  stopLocationWatch();
   document.body.classList.remove("scan-success", "scan-error");
   scannerPage.hidden = true;
+  manualEntryPage.hidden = true;
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = true;
   dropOverviewPage.hidden = true;
   routePage.hidden = false;
   renderRoutePage();
@@ -1014,12 +1216,18 @@ function showRoutePage() {
 }
 
 function openScannerForDrop(dropId, openCamera = false) {
+  damageMode = false;
+  document.body.classList.remove("damage-mode");
+  openDamageScannerButton.textContent = "Report Damage";
   activeDropId = dropId;
   applyActiveDropData();
 
   routePage.hidden = true;
   dropOverviewPage.hidden = true;
   scannerPage.hidden = false;
+  manualEntryPage.hidden = true;
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = true;
   document.body.classList.remove("scan-success", "scan-error");
 
   const scannerUrl = new URL(window.location.href);
@@ -1036,9 +1244,14 @@ function openScannerForDrop(dropId, openCamera = false) {
 
 function openDropOverview(dropId) {
   stopScanner();
+  stopManualPhotoCamera();
+  stopLocationWatch();
   activeDropId = dropId;
   routePage.hidden = true;
   scannerPage.hidden = true;
+  manualEntryPage.hidden = true;
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = true;
   dropOverviewPage.hidden = false;
   renderDropOverview();
 
@@ -1268,6 +1481,7 @@ function renderDropOverview() {
 
   const accepted = getKnownAcceptedCartons();
   const missing = getMissingCartons();
+  const damaged = getDamagedCartons();
   const scannedCount = cartons.filter(carton =>
     accepted.has(String(carton.cartonNumber).trim().toUpperCase())
   ).length;
@@ -1313,6 +1527,7 @@ function renderDropOverview() {
       .toUpperCase();
     const isScanned = accepted.has(cartonNumber);
     const isMissing = missing.has(cartonNumber) && !isScanned;
+    const isDamaged = damaged.has(cartonNumber);
     const row = document.createElement("article");
     const heading = document.createElement("div");
     const number = document.createElement("strong");
@@ -1329,7 +1544,9 @@ function renderDropOverview() {
     description.className = "carton-description";
 
     number.textContent = cartonNumber;
-    status.textContent = isMissing
+    status.textContent = isDamaged && isScanned
+      ? "SCANNED · DAMAGE REPORTED"
+      : isMissing
       ? "MISSING"
       : isScanned
         ? "SCANNED"
@@ -1341,6 +1558,16 @@ function renderDropOverview() {
     heading.append(number, status);
     row.append(heading, type, description);
 
+    const cartonActions = document.createElement("div");
+    cartonActions.className = "carton-report-actions";
+    const damageButton = document.createElement("button");
+    damageButton.type = "button";
+    damageButton.className = "report-damage-button";
+    damageButton.textContent = isDamaged ? "Report More Damage" : "Report Damage";
+    damageButton.disabled = isMissing;
+    damageButton.addEventListener("click", () => openDamageForm(carton, "overview"));
+    cartonActions.append(damageButton);
+
     if (!isScanned && !isMissing) {
       const missingButton = document.createElement("button");
       missingButton.type = "button";
@@ -1349,11 +1576,227 @@ function renderDropOverview() {
       missingButton.addEventListener("click", () =>
         reportMissingCarton(carton)
       );
-      row.append(missingButton);
+      cartonActions.append(missingButton);
     }
+
+    row.append(cartonActions);
 
     overviewCartonList.append(row);
   });
+}
+
+function getDamagedCartons() {
+  return new Set(readStoredJson(DAMAGED_KEY, []));
+}
+
+function rememberDamagedCarton(cartonNumber) {
+  const damaged = getDamagedCartons();
+  damaged.add(String(cartonNumber).trim().toUpperCase());
+  writeStoredJson(DAMAGED_KEY, [...damaged]);
+}
+
+async function openDamageScanner() {
+  damageMode = true;
+  selectedDamageCarton = null;
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = true;
+  routePage.hidden = true;
+  dropOverviewPage.hidden = true;
+  manualEntryPage.hidden = true;
+  scannerPage.hidden = false;
+  document.body.classList.add("damage-mode");
+  dropIdBox.textContent = "REPORT DAMAGE";
+  statusBox.textContent = "Scan the damaged carton";
+  resultBox.textContent = "None";
+  openDamageScannerButton.textContent = "Damage Mode Active";
+  window.scrollTo(0, 0);
+  await startScanner();
+}
+
+function openDamageForm(carton, returnScreen = "overview") {
+  stopScanner();
+  selectedDamageCarton = carton;
+  damageReturnScreen = returnScreen;
+  scannerPage.hidden = true;
+  routePage.hidden = true;
+  dropOverviewPage.hidden = true;
+  manualEntryPage.hidden = true;
+  damageCompletePage.hidden = true;
+  damageFormPage.hidden = false;
+  document.body.classList.remove("damage-mode", "scan-success", "scan-error");
+
+  damageCartonNumber.textContent = String(carton.cartonNumber).toUpperCase();
+  damageCartonDetails.textContent = [
+    `Drop ${carton.dropNumber}`,
+    cleanCustomerName(carton.customer),
+    carton.cartonType || "Carton",
+    carton.description || "No description available"
+  ].join(" · ");
+  resetDamageForm();
+  window.scrollTo(0, 0);
+}
+
+function resetDamageForm() {
+  damageForm.reset();
+  document.getElementById("damage-type").value = "Bent/Dented";
+  productPhotos = new Map();
+  damagePhotos = [];
+  damageFormMessage.textContent = "";
+  productPhotoFields.replaceChildren();
+  ["Product side", "Opposite side", "First end", "Opposite end"].forEach(label => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "damage-photo-slot";
+    const cameraLabel = document.createElement("label");
+    const title = document.createElement("span");
+    const cameraInput = document.createElement("input");
+    const libraryInput = document.createElement("input");
+    const libraryButton = document.createElement("button");
+    title.textContent = label;
+    cameraInput.type = "file";
+    cameraInput.accept = "image/*";
+    cameraInput.capture = "environment";
+    libraryInput.type = "file";
+    libraryInput.accept = "image/*";
+    libraryButton.type = "button";
+    libraryButton.className = "photo-library-button";
+    libraryButton.setAttribute("aria-label", `Choose ${label} from photos`);
+    libraryButton.textContent = "🖼️";
+    libraryButton.addEventListener("click", event => {
+      event.stopPropagation();
+      libraryInput.click();
+    });
+    const saveProductPhoto = async input => {
+      const file = input.files?.[0];
+      if (!file) return;
+      productPhotos.set(label, await imageFileToDataUrl(file));
+      wrapper.classList.add("complete");
+      title.textContent = `✓ ${label}`;
+      input.value = "";
+    };
+    cameraInput.addEventListener("change", () => saveProductPhoto(cameraInput));
+    libraryInput.addEventListener("change", () => saveProductPhoto(libraryInput));
+    cameraLabel.append(title, cameraInput);
+    wrapper.append(cameraLabel, libraryInput, libraryButton);
+    productPhotoFields.append(wrapper);
+  });
+  renderDamagePhotoCount();
+  updateDamageDescriptionCount();
+}
+
+function cancelDamageForm() {
+  if (damageReturnScreen === "scanner") openDamageScanner();
+  else openDropOverview(activeDropId);
+}
+
+function updateDamageDescriptionCount() {
+  const count = damageDescription.value.trim().length;
+  damageDescriptionCount.textContent = count >= 5
+    ? `${count} characters · ready`
+    : `${count} of 5 minimum characters`;
+}
+
+async function addSelectedDamagePhotos() {
+  const sourceInput = damageCameraInput.files?.length
+    ? damageCameraInput
+    : damagePhotoInput;
+  const files = [...(sourceInput.files || [])];
+  for (const file of files) damagePhotos.push(await imageFileToDataUrl(file));
+  sourceInput.value = "";
+  renderDamagePhotoCount();
+}
+
+function renderDamagePhotoCount() {
+  damagePhotoCount.textContent = `${damagePhotos.length} damage photo${damagePhotos.length === 1 ? "" : "s"} added · minimum 2`;
+  damagePhotoPreviews.replaceChildren(...damagePhotos.map((src, index) => {
+    const item = document.createElement("div");
+    const image = document.createElement("img");
+    const remove = document.createElement("button");
+    image.src = src;
+    image.alt = `Damage photo ${index + 1}`;
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      damagePhotos.splice(index, 1);
+      renderDamagePhotoCount();
+    });
+    item.append(image, remove);
+    return item;
+  }));
+}
+
+function imageFileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+    image.onload = () => {
+      const maxEdge = 1600;
+      const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.naturalWidth * scale);
+      canvas.height = Math.round(image.naturalHeight * scale);
+      canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(objectUrl);
+      resolve(canvas.toDataURL("image/jpeg", 0.72));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("This photo could not be opened. Try taking a new photo."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function meaningfulLength(value) {
+  return String(value || "").replace(/[^a-z0-9]/gi, "").length;
+}
+
+function submitDamageReport(event) {
+  event.preventDefault();
+  if (!selectedDamageCarton) return;
+  const description = damageDescription.value.trim();
+  const disposition = document.getElementById("customer-disposition").value;
+  if (meaningfulLength(description) < 5) {
+    damageFormMessage.textContent = "Enter at least 5 meaningful characters describing the damage.";
+    return;
+  }
+  if (productPhotos.size !== 4) {
+    damageFormMessage.textContent = "Add each of the four labeled product photos.";
+    return;
+  }
+  if (damagePhotos.length < 2) {
+    damageFormMessage.textContent = "Add at least two close-up damage photos.";
+    return;
+  }
+  if (!disposition) {
+    damageFormMessage.textContent = "Select the customer disposition.";
+    return;
+  }
+
+  const cartonNumber = String(selectedDamageCarton.cartonNumber).trim().toUpperCase();
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+  queueRecord({
+    action: "damageReport",
+    shippingEvent,
+    dropId: activeDropId,
+    cartonNumber,
+    driverId: driver?.driverId || "",
+    damageType: document.getElementById("damage-type").value,
+    estimatedPanels: document.getElementById("damage-panel-count").value,
+    description,
+    disposition,
+    productPhotos: [...productPhotos.entries()].map(([label, data]) => ({ label, data })),
+    damagePhotos,
+    ...getLocationMetadata()
+  });
+  rememberAcceptedCarton(cartonNumber);
+  rememberDamagedCarton(cartonNumber);
+  scannedCartons.add(cartonNumber);
+  syncPendingRecords();
+  renderRoutePage();
+  damageFormPage.hidden = true;
+  damageCompletePage.hidden = false;
+  damageCompleteSummary.textContent = `${cartonNumber} · ${disposition}`;
+  window.scrollTo(0, 0);
 }
 
 function reportMissingCarton(carton) {
@@ -1379,6 +1822,311 @@ function reportMissingCarton(carton) {
   );
   renderDropOverview();
   renderRoutePage();
+}
+
+async function openManualEntry() {
+  if (!activeDropId) return;
+
+  const locationAllowed = await ensureLocationAccess();
+
+  if (!locationAllowed || locationPermissionDenied) {
+    alert(
+      "TrackMaster needs location permission before manual entry.\n\n" +
+      "Open this site in Settings, allow location access, then try again."
+    );
+    return;
+  }
+
+  stopScanner();
+  scannerPage.hidden = true;
+  manualEntryPage.hidden = false;
+  manualEntryMessage.textContent = "";
+  manualCartonNumber.value = "";
+  manualExplanation.value = "";
+  manualPhotos = [];
+  manualEntryForm.querySelector(
+    'input[name="tag-status"][value="Won\'t Scan"]'
+  ).checked = true;
+  updateManualExplanationCount();
+  updateManualPhotoInstructions();
+  window.scrollTo(0, 0);
+
+  try {
+    await startManualPhotoCamera();
+    manualCartonNumber.focus();
+  } catch (error) {
+    manualEntryMessage.textContent =
+      "Camera access is required for manual entry.";
+    submitManualEntryButton.disabled = true;
+  }
+}
+
+function closeManualEntry() {
+  stopManualPhotoCamera();
+  manualEntryPage.hidden = true;
+  scannerPage.hidden = false;
+  submitManualEntryButton.disabled = false;
+  openScannerForDrop(activeDropId, true);
+}
+
+async function startManualPhotoCamera() {
+  stopManualPhotoCamera();
+
+  manualPhotoStream = await navigator.mediaDevices.getUserMedia({
+    video: {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    },
+    audio: false
+  });
+
+  manualPhotoCamera.srcObject = manualPhotoStream;
+  await manualPhotoCamera.play();
+  submitManualEntryButton.disabled = false;
+}
+
+function stopManualPhotoCamera() {
+  manualPhotoStream?.getTracks?.().forEach(track => track.stop());
+  manualPhotoStream = null;
+  manualPhotoCamera.srcObject = null;
+}
+
+function captureManualPhoto() {
+  const requiredPhotos = getRequiredManualPhotoLabels();
+
+  if (manualPhotos.length >= requiredPhotos.length) {
+    resetManualPhotos();
+    return;
+  }
+
+  const sourceWidth = manualPhotoCamera.videoWidth;
+  const sourceHeight = manualPhotoCamera.videoHeight;
+
+  if (!sourceWidth || !sourceHeight) {
+    manualEntryMessage.textContent =
+      "Wait for the camera image, then take the photo.";
+    return;
+  }
+
+  const maximumWidth = 960;
+  const scale = Math.min(1, maximumWidth / sourceWidth);
+  manualPhotoCanvas.width = Math.round(sourceWidth * scale);
+  manualPhotoCanvas.height = Math.round(sourceHeight * scale);
+
+  const context = manualPhotoCanvas.getContext("2d");
+  context.drawImage(
+    manualPhotoCamera,
+    0,
+    0,
+    manualPhotoCanvas.width,
+    manualPhotoCanvas.height
+  );
+
+  const photoData = manualPhotoCanvas.toDataURL("image/jpeg", 0.68);
+  manualPhotos.push(photoData);
+  manualPhotoPreview.src = photoData;
+  manualEntryMessage.textContent =
+    `${requiredPhotos[manualPhotos.length - 1]} photo captured.`;
+  updateManualPhotoInstructions();
+}
+
+function updateManualExplanationCount() {
+  const meaningfulCharacters = manualExplanation.value
+    .replace(/[^a-z0-9]/gi, "")
+    .length;
+  manualExplanationCount.textContent =
+    meaningfulCharacters >= 10
+      ? "Explanation accepted"
+      : `${10 - meaningfulCharacters} more letters or numbers required`;
+}
+
+function getSelectedTagStatus() {
+  return manualEntryForm.querySelector(
+    'input[name="tag-status"]:checked'
+  )?.value || "Won't Scan";
+}
+
+function getRequiredManualPhotoLabels() {
+  return getSelectedTagStatus() === "Won't Scan"
+    ? ["Tag/barcode"]
+    : ["Product side", "Opposite side", "First end", "Opposite end"];
+}
+
+function resetManualPhotos() {
+  manualPhotos = [];
+  manualPhotoPreview.hidden = true;
+  manualPhotoCamera.hidden = false;
+  captureManualPhotoButton.textContent = "Take Required Photo";
+  manualEntryMessage.textContent = "";
+  updateManualPhotoInstructions();
+}
+
+function updateManualPhotoInstructions() {
+  const tagStatus = getSelectedTagStatus();
+  const requiredPhotos = getRequiredManualPhotoLabels();
+  const nextLabel = requiredPhotos[manualPhotos.length];
+  const complete = manualPhotos.length === requiredPhotos.length;
+
+  manualExplanationSection.hidden = tagStatus !== "Other";
+  manualPhotoSection.hidden = false;
+  manualPhotoProgress.textContent =
+    `${manualPhotos.length} of ${requiredPhotos.length} photos captured`;
+
+  if (complete) {
+    manualPhotoHelp.textContent = "Required photos complete.";
+    manualPhotoPreview.hidden = false;
+    manualPhotoCamera.hidden = true;
+    captureManualPhotoButton.textContent =
+      requiredPhotos.length === 1 ? "Retake Photo" : "Start Photos Over";
+    return;
+  }
+
+  manualPhotoPreview.hidden = true;
+  manualPhotoCamera.hidden = false;
+  captureManualPhotoButton.textContent = `Take ${nextLabel} Photo`;
+  manualPhotoHelp.textContent = tagStatus === "Won't Scan"
+    ? "Photograph the carton tag and unreadable barcode."
+    : `Required angle: ${nextLabel}.`;
+}
+
+function showManualValidationError(message) {
+  manualEntryMessage.textContent = message;
+  window.scrollTo(0, 0);
+}
+
+function stopManualEntryForWrongCarton(title, message) {
+  stopManualPhotoCamera();
+  manualEntryPage.hidden = true;
+  scannerPage.hidden = false;
+  hardStop(title, message);
+}
+
+function submitManualEntry(event) {
+  event.preventDefault();
+
+  const digits = manualCartonNumber.value.replace(/\D/g, "");
+  const cartonNumber = `C${digits}`;
+  const explanation = manualExplanation.value.trim();
+  const tagStatus = getSelectedTagStatus();
+  const requiredPhotoCount = getRequiredManualPhotoLabels().length;
+  const meaningfulCharacters = explanation
+    .replace(/[^a-z0-9]/gi, "")
+    .length;
+
+  if (!digits) {
+    showManualValidationError("Enter the carton number.");
+    return;
+  }
+
+  if (tagStatus === "Other" && meaningfulCharacters < 10) {
+    showManualValidationError(
+      "Enter a useful explanation with at least 10 letters or numbers."
+    );
+    return;
+  }
+
+  if (manualPhotos.length !== requiredPhotoCount) {
+    showManualValidationError(
+      `Take all ${requiredPhotoCount} required live photos.`
+    );
+    return;
+  }
+
+  const carton = cartonLookup.get(cartonNumber);
+
+  if (!carton) {
+    queueScanException(
+      cartonNumber,
+      "Wrong Route",
+      `Manually entered at ${activeDropId}, but it is not assigned to Shipping Event ${shippingEvent}.`
+    );
+    stopManualEntryForWrongCarton(
+      "WRONG ROUTE",
+      `${cartonNumber}\n\nThis carton is not assigned to this route.`
+    );
+    return;
+  }
+
+  if (carton.dropId !== activeDropId) {
+    queueScanException(
+      cartonNumber,
+      "Wrong Drop",
+      `Manually entered at ${activeDropId}; assigned to ${carton.dropId}, Drop ${carton.dropNumber}, ${carton.customer}.`
+    );
+    stopManualEntryForWrongCarton(
+      "WRONG DROP",
+      `${cartonNumber} belongs to Drop ${carton.dropNumber}\n${cleanCustomerName(carton.customer)}`
+    );
+    return;
+  }
+
+  if (damageMode) {
+    openDamageForm(carton, "scanner");
+    return;
+  }
+
+  if (scannedCartons.has(cartonNumber)) {
+    showManualValidationError(`${cartonNumber} is already scanned.`);
+    playDuplicateBeep();
+    return;
+  }
+
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+
+  try {
+    queueSuccessfulScan(cartonNumber, {
+      entryMethod: "Manual",
+      explanation,
+      tagStatus,
+      photoData: manualPhotos,
+      driverId: driver?.driverId || ""
+    });
+  } catch (error) {
+    showManualValidationError(
+      "The phone could not store this manual entry. Try again."
+    );
+    return;
+  }
+
+  scannedCartons.add(cartonNumber);
+  stopManualPhotoCamera();
+  manualEntryPage.hidden = true;
+  scannerPage.hidden = false;
+  applyActiveDropData();
+  resultBox.textContent = cartonNumber;
+  statusBox.textContent = `Manual entry accepted: ${cartonNumber}`;
+  updateProgress();
+  renderRoutePage();
+  playBeep();
+  startScanner();
+}
+
+function identifyDamageCarton(cartonNumber, returnScreen = "scanner") {
+  if (!/^C\d+$/.test(cartonNumber)) {
+    alert("Enter a valid carton number beginning with C.");
+    return;
+  }
+  const carton = cartonLookup.get(cartonNumber);
+  if (!carton) {
+    queueScanException(
+      cartonNumber,
+      "Wrong Route",
+      `Carton manually entered in Damage Mode at ${activeDropId}, but it is not assigned to Shipping Event ${shippingEvent}.`
+    );
+    alert("WRONG ROUTE\n\nThis carton is not assigned to this route.");
+    return;
+  }
+  if (carton.dropId !== activeDropId) {
+    queueScanException(
+      cartonNumber,
+      "Wrong Drop",
+      `Damage Mode manual entry at ${activeDropId}; assigned to ${carton.dropId}.`
+    );
+    alert(`WRONG DROP\n\n${cartonNumber} belongs to Drop ${carton.dropNumber}.`);
+    return;
+  }
+  openDamageForm(carton, returnScreen);
 }
 
 function cleanCustomerName(value) {
@@ -1439,6 +2187,20 @@ function pluralizeType(type) {
 async function startScanner() {
   document.body.classList.remove("scan-error");
   if (scannerRunning || !activeDropId) return;
+
+  statusBox.textContent = "Checking location permission…";
+  const locationAllowed = await ensureLocationAccess();
+
+  if (!locationAllowed || locationPermissionDenied) {
+    startButton.disabled = false;
+    startButton.textContent = "Location Settings Required";
+    statusBox.textContent = "LOCATION PERMISSION REQUIRED";
+    alert(
+      "TrackMaster needs location permission before opening the scanner.\n\n" +
+      "Open this site in Settings, allow location access, then try again."
+    );
+    return;
+  }
 
   rotateNextScanFrame = false;
 
