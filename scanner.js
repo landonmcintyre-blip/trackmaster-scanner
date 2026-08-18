@@ -2808,8 +2808,8 @@ function reopenUndeliveredDrop() {
 
 let signatureDrawing = false, signatureHasInk = false;
 function openSignatureDialog() { signatureDialog.showModal(); resizeSignatureCanvas(); clearSignature(); }
-function resizeSignatureCanvas() { const rect = signatureCanvas.getBoundingClientRect(); signatureCanvas.width = Math.max(600, Math.round(rect.width * devicePixelRatio)); signatureCanvas.height = Math.max(250, Math.round(rect.height * devicePixelRatio)); const ctx = signatureCanvas.getContext("2d"); ctx.scale(devicePixelRatio, devicePixelRatio); ctx.lineWidth = 3; ctx.lineCap = "round"; }
-function signaturePoint(event) { const rect = signatureCanvas.getBoundingClientRect(), touch = event.touches?.[0] || event; return { x: touch.clientX - rect.left, y: touch.clientY - rect.top }; }
+function resizeSignatureCanvas() { const width = signatureCanvas.clientWidth, height = signatureCanvas.clientHeight; signatureCanvas.width = Math.max(600, Math.round(width * devicePixelRatio)); signatureCanvas.height = Math.max(250, Math.round(height * devicePixelRatio)); const ctx = signatureCanvas.getContext("2d"); ctx.scale(devicePixelRatio, devicePixelRatio); ctx.lineWidth = 3; ctx.lineCap = "round"; }
+function signaturePoint(event) { return { x: Number(event.offsetX), y: Number(event.offsetY) }; }
 function startSignature(event) { event.preventDefault(); signatureDrawing = true; const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
 function moveSignature(event) { if (!signatureDrawing) return; event.preventDefault(); const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.lineTo(p.x, p.y); ctx.stroke(); signatureHasInk = true; document.getElementById("accept-signature").disabled = false; }
 function endSignature() { signatureDrawing = false; }
@@ -2817,13 +2817,11 @@ function clearSignature() { const ctx = signatureCanvas.getContext("2d"); ctx.cl
 function acceptSignature() {
   if (!signatureHasInk) return;
   const output = document.createElement("canvas");
-  const landscape = signatureCanvas.width >= signatureCanvas.height;
-  output.width = landscape ? signatureCanvas.width : signatureCanvas.height;
-  output.height = landscape ? signatureCanvas.height : signatureCanvas.width;
+  output.width = signatureCanvas.width;
+  output.height = signatureCanvas.height;
   const context = output.getContext("2d");
   context.fillStyle = "white"; context.fillRect(0, 0, output.width, output.height);
-  if (landscape) context.drawImage(signatureCanvas, 0, 0);
-  else { context.translate(output.width, 0); context.rotate(Math.PI / 2); context.drawImage(signatureCanvas, 0, 0); }
+  context.drawImage(signatureCanvas, 0, 0);
   customerSignature = output.toDataURL("image/png");
   signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.close(); document.getElementById("open-signature-button").textContent = "Replace Signature";
 }
