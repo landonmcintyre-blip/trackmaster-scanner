@@ -452,7 +452,6 @@ async function handleLogin(event) {
   loginButton.textContent = "Signing In…";
 
   try {
-    const uploadQueue = await materializePhotoTokens(submittedQueue);
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
@@ -1079,6 +1078,7 @@ async function syncPendingRecords() {
   pendingSyncBox.textContent = `Syncing ${submittedQueue.length}…`;
 
   try {
+    const uploadQueue = await materializePhotoTokens(submittedQueue);
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
