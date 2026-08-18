@@ -201,6 +201,39 @@ let finalizePhotos = [];
 let unablePhotos = new Map();
 let customerSignature = "";
 
+const PHOTO_TOKEN_PREFIX = "tmphoto:";
+let photoDatabasePromise = null;
+
+function openPhotoDatabase() {
+  if (photoDatabasePromise) return photoDatabasePromise;
+  photoDatabasePromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open("trackmaster-v27", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("photos");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return photoDatabasePromise;
+}
+
+async function storePhotoData(data) {
+  const id = createRecordId(); const db = await openPhotoDatabase();
+  await new Promise((resolve, reject) => { const tx = db.transaction("photos", "readwrite"); tx.objectStore("photos").put(data, id); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });
+  return `${PHOTO_TOKEN_PREFIX}${id}`;
+}
+
+async function loadPhotoData(value) {
+  if (!String(value || "").startsWith(PHOTO_TOKEN_PREFIX)) return value;
+  const db = await openPhotoDatabase(), id = String(value).slice(PHOTO_TOKEN_PREFIX.length);
+  return new Promise((resolve, reject) => { const request = db.transaction("photos").objectStore("photos").get(id); request.onsuccess = () => resolve(request.result || ""); request.onerror = () => reject(request.error); });
+}
+
+async function materializePhotoTokens(value) {
+  if (typeof value === "string") return loadPhotoData(value);
+  if (Array.isArray(value)) return Promise.all(value.map(materializePhotoTokens));
+  if (value && typeof value === "object") { const output = {}; for (const [key, item] of Object.entries(value)) output[key] = await materializePhotoTokens(item); return output; }
+  return value;
+}
+
 const scannedCartons = new Set();
 
 const hints = new Map();
@@ -419,6 +452,7 @@ async function handleLogin(event) {
   loginButton.textContent = "Signing In…";
 
   try {
+    const uploadQueue = await materializePhotoTokens(submittedQueue);
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
@@ -529,7 +563,7 @@ async function loadAssignedRoutes(forceRefresh = false) {
     routePickerMessage.textContent =
       "Saved assignments ready — checking for updates…";
   } else {
-    routePickerMessage.textContent = "Finding today’s assigned routes…";
+    routePickerMessage.textContent = "Finding assigned routes…";
   }
 
   refreshAssignedRoutesButton.disabled = true;
@@ -582,13 +616,8 @@ function displayAssignedRoutes(routes, fromCache) {
 
   if (!routes.length) {
     routePickerMessage.textContent =
-      "No routes are assigned to you for today.";
+      "No routes are assigned to you within the 7-day window.";
     assignedRouteList.innerHTML = "";
-    return;
-  }
-
-  if (routes.length === 1 && !forceRoutePicker) {
-    openAssignedRoute(routes[0].shippingEvent);
     return;
   }
 
@@ -597,7 +626,17 @@ function displayAssignedRoutes(routes, fromCache) {
     : "Choose a route to begin.";
   assignedRouteList.innerHTML = "";
 
-  routes.forEach(route => {
+  const today = new Date();
+  const localKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const groups = [
+    ["Today", routes.filter(route => (route.routeDateKey || "") === localKey)],
+    ["Upcoming", routes.filter(route => (route.routeDateKey || "") > localKey).sort((a, b) => String(a.routeDateKey).localeCompare(String(b.routeDateKey)))],
+    ["Previous", routes.filter(route => (route.routeDateKey || "") < localKey).sort((a, b) => String(b.routeDateKey).localeCompare(String(a.routeDateKey)))]
+  ];
+  groups.forEach(([label, groupRoutes]) => {
+    if (!groupRoutes.length) return;
+    const heading = document.createElement("h2"); heading.className = "route-group-heading"; heading.textContent = label; assignedRouteList.appendChild(heading);
+    groupRoutes.forEach(route => {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "assigned-route-card";
@@ -614,6 +653,7 @@ function displayAssignedRoutes(routes, fromCache) {
       openAssignedRoute(route.shippingEvent)
     );
     assignedRouteList.appendChild(button);
+    });
   });
 }
 
@@ -996,6 +1036,11 @@ function queueSuccessfulScan(cartonNumber, details = {}) {
     explanation: details.explanation || "",
     tagStatus: details.tagStatus || "",
     photoData: details.photoData || "",
+    productPhotos: details.productPhotos || {},
+    bundleAssociationId: details.bundleAssociationId || "",
+    associatedCartons: details.associatedCartons || [],
+    cartonType: details.cartonType || "",
+    driverAssignedType: Boolean(details.driverAssignedType),
     driverId: details.driverId || driver?.driverId || "",
     ...getLocationMetadata()
   });
@@ -1041,7 +1086,7 @@ async function syncPendingRecords() {
       },
       body: JSON.stringify({
         action: "syncBatch",
-        records: submittedQueue
+        records: uploadQueue
       }),
       keepalive: !submittedQueue.some(record =>
         record.photoData || record.productPhotos || record.damagePhotos || record.photos || record.rejection?.signature
@@ -1743,7 +1788,7 @@ function resetDamageForm() {
       const file = input.files?.[0];
       if (!file) return;
       productPhotos.set(label, await imageFileToDataUrl(file));
-      preview.src = productPhotos.get(label);
+      preview.src = await loadPhotoData(productPhotos.get(label));
       preview.hidden = false;
       deleteButton.hidden = false;
       wrapper.classList.add("complete");
@@ -1797,7 +1842,7 @@ function renderDamagePhotoCount() {
     const item = document.createElement("div");
     const image = document.createElement("img");
     const remove = document.createElement("button");
-    image.src = src;
+    loadPhotoData(src).then(data => { image.src = data; });
     image.alt = `Damage photo ${index + 1}`;
     remove.type = "button";
     remove.textContent = "×";
@@ -1814,7 +1859,7 @@ function imageFileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     const objectUrl = URL.createObjectURL(file);
-    image.onload = () => {
+    image.onload = async () => {
       const maxEdge = 1600;
       const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth, image.naturalHeight));
       const canvas = document.createElement("canvas");
@@ -1822,7 +1867,7 @@ function imageFileToDataUrl(file) {
       canvas.height = Math.round(image.naturalHeight * scale);
       canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(objectUrl);
-      resolve(canvas.toDataURL("image/jpeg", 0.72));
+      resolve(await storePhotoData(canvas.toDataURL("image/jpeg", 0.72)));
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
@@ -2575,7 +2620,7 @@ function createV27PhotoSlot(label, value, onChange) {
   const title = document.createElement("span"); title.textContent = label;
   const input = document.createElement("input"); input.type = "file"; input.accept = "image/*"; input.capture = "environment";
   const preview = document.createElement("img"); preview.className = "product-photo-preview"; preview.alt = label;
-  if (value) { preview.src = value; preview.hidden = false; } else preview.hidden = true;
+  if (value) { preview.hidden = false; loadPhotoData(value).then(data => { preview.src = data; }); } else preview.hidden = true;
   input.addEventListener("change", async () => { const file = input.files?.[0]; if (file) onChange(await compressPhoto(file)); });
   cameraLabel.append(title, preview, input);
   const library = document.createElement("button"); library.type = "button"; library.className = "photo-library-button"; library.textContent = "🖼️";
@@ -2593,7 +2638,7 @@ async function compressPhoto(file) {
   const max = 1280, scale = Math.min(1, max / Math.max(image.width, image.height));
   const canvas = document.createElement("canvas"); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
   canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", .68);
+  return storePhotoData(canvas.toDataURL("image/jpeg", .68));
 }
 
 function saveActiveDraft() { const drafts = getDrafts(); drafts[activeCartonDraft.cartonNumber] = activeCartonDraft; writeStoredJson(DRAFTS_KEY, drafts); }
@@ -2644,7 +2689,7 @@ function completeCartonGroup() {
     const method = index === 0 ? draft.entryMethod : "Barcode";
     methods[number] = method;
     if (index === 0 && draft.pendingDamage) queueRecord(draft.pendingDamage);
-    else queueSuccessfulScan(number, { entryMethod: method, explanation: index === 0 ? draft.manual?.explanation : "", tagStatus: index === 0 ? draft.manual?.tagStatus : "", photoData: index === 0 ? draft.manual?.tagEvidence : "", productPhotos: draft.photos, bundleAssociationId: groupId });
+    else queueSuccessfulScan(number, { entryMethod: method, explanation: index === 0 ? draft.manual?.explanation : "", tagStatus: index === 0 ? draft.manual?.tagStatus : "", photoData: index === 0 ? draft.manual?.tagEvidence : "", productPhotos: draft.photos, bundleAssociationId: groupId, associatedCartons: members, cartonType: draft.cartonType, driverAssignedType: draft.driverAssignedType });
     rememberAcceptedCarton(number);
     if (draft.pendingDamage) rememberDamagedCarton(number);
     scannedCartons.add(number);
@@ -2681,7 +2726,7 @@ async function addFinalizePhotos(event) {
 
 function renderFinalizePhotos() {
   finalizePhotoPreviews.replaceChildren();
-  finalizePhotos.forEach((data, index) => { const box = document.createElement("div"); const img = document.createElement("img"); img.src = data; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.addEventListener("click", () => { finalizePhotos.splice(index, 1); writeStoredJson(finalizeDraftKey(), finalizePhotos); renderFinalizePhotos(); }); box.append(img, remove); finalizePhotoPreviews.append(box); });
+  finalizePhotos.forEach((data, index) => { const box = document.createElement("div"); const img = document.createElement("img"); loadPhotoData(data).then(source => { img.src = source; }); const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.addEventListener("click", () => { finalizePhotos.splice(index, 1); writeStoredJson(finalizeDraftKey(), finalizePhotos); renderFinalizePhotos(); }); box.append(img, remove); finalizePhotoPreviews.append(box); });
 }
 
 function completeDelivery() {
@@ -2698,7 +2743,8 @@ function openUnableDelivery() {
 
 function configureUnableDeliveryForm() {
   const reason = unableReason.value;
-  unableExplanationPanel.hidden = !["Inaccessible Jobsite", "Driver Returning to Yard"].includes(reason);
+  unableExplanationPanel.hidden = !["Inaccessible Jobsite", "Driver Returning to Yard", "Customer Rejected Entire Order"].includes(reason);
+  unableExplanationPanel.querySelector("label").textContent = reason === "Customer Rejected Entire Order" ? "Reason for rejecting the order" : "Explanation";
   rejectionCustomerPanel.hidden = reason !== "Customer Rejected Entire Order";
   unablePhotoPanel.hidden = !["Business Closed", "Locked Gate"].includes(reason);
   const labels = reason === "Business Closed" ? ["Business front"] : reason === "Locked Gate" ? ["Gate", "Lock close-up"] : [];
@@ -2716,7 +2762,7 @@ function submitUnableDelivery(event) {
   event.preventDefault(); unableMessage.textContent = "";
   const reason = unableReason.value;
   if (!reason) { unableMessage.textContent = "Select a reason."; return; }
-  if (["Inaccessible Jobsite", "Driver Returning to Yard"].includes(reason) && !meaningful(unableExplanation.value, 10)) { unableMessage.textContent = "Enter at least 10 meaningful characters."; return; }
+  if (["Inaccessible Jobsite", "Driver Returning to Yard", "Customer Rejected Entire Order"].includes(reason) && !meaningful(unableExplanation.value, 10)) { unableMessage.textContent = reason === "Customer Rejected Entire Order" ? "Enter at least 10 meaningful characters explaining the rejection." : "Enter at least 10 meaningful characters."; return; }
   const requiredEvidence = reason === "Business Closed" ? ["Business front"] : reason === "Locked Gate" ? ["Gate", "Lock close-up"] : [];
   if (requiredEvidence.some(label => !unablePhotos.get(label))) { unableMessage.textContent = "Add each required evidence photo."; return; }
   let rejection = null;
@@ -2750,7 +2796,7 @@ function submitReturnToYard() {
 
 function saveUndeliveredDrops(dropIds, reason, rejection) {
   const records = getUndelivered(); const driver = readStoredJson(DRIVER_SESSION_KEY, null);
-  dropIds.forEach(dropId => { const leftAtSite = rejection?.leftAtSite === "Yes"; records[dropId] = { reason, status: leftAtSite ? "Customer Rejected · Left at Site · Pickup Required" : reason === "Customer Rejected Entire Order" ? "Customer Rejected · Remains on Truck" : `Not Delivered · ${reason}`, recordedAt: new Date().toISOString(), rejection, photos: Object.fromEntries(unablePhotos) }; queueRecord({ action: "dropNotDelivered", shippingEvent, dropId, reason, rejection, photos: Object.fromEntries(unablePhotos), driverId: driver?.driverId || "", ...getLocationMetadata() }); });
+  dropIds.forEach(dropId => { const leftAtSite = rejection?.leftAtSite === "Yes"; records[dropId] = { reason, status: leftAtSite ? "Customer Rejected · Left at Site · Pickup Required" : reason === "Customer Rejected Entire Order" ? "Customer Rejected · Remains on Truck" : `Not Delivered · ${reason}`, recordedAt: new Date().toISOString(), rejection, photos: Object.fromEntries(unablePhotos) }; queueRecord({ action: "dropNotDelivered", shippingEvent, dropId, reason, explanation: unableExplanation.value.trim(), rejection, photos: Object.fromEntries(unablePhotos), driverId: driver?.driverId || "", ...getLocationMetadata() }); });
   writeStoredJson(UNDELIVERED_KEY, records); syncPendingRecords(); showRoutePage();
 }
 
@@ -2768,7 +2814,19 @@ function startSignature(event) { event.preventDefault(); signatureDrawing = true
 function moveSignature(event) { if (!signatureDrawing) return; event.preventDefault(); const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.lineTo(p.x, p.y); ctx.stroke(); signatureHasInk = true; document.getElementById("accept-signature").disabled = false; }
 function endSignature() { signatureDrawing = false; }
 function clearSignature() { const ctx = signatureCanvas.getContext("2d"); ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height); signatureHasInk = false; document.getElementById("accept-signature").disabled = true; }
-function acceptSignature() { if (!signatureHasInk) return; customerSignature = signatureCanvas.toDataURL("image/png"); signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.close(); document.getElementById("open-signature-button").textContent = "Replace Signature"; }
+function acceptSignature() {
+  if (!signatureHasInk) return;
+  const output = document.createElement("canvas");
+  const landscape = signatureCanvas.width >= signatureCanvas.height;
+  output.width = landscape ? signatureCanvas.width : signatureCanvas.height;
+  output.height = landscape ? signatureCanvas.height : signatureCanvas.width;
+  const context = output.getContext("2d");
+  context.fillStyle = "white"; context.fillRect(0, 0, output.width, output.height);
+  if (landscape) context.drawImage(signatureCanvas, 0, 0);
+  else { context.translate(output.width, 0); context.rotate(Math.PI / 2); context.drawImage(signatureCanvas, 0, 0); }
+  customerSignature = output.toDataURL("image/png");
+  signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.close(); document.getElementById("open-signature-button").textContent = "Replace Signature";
+}
 signatureCanvas.addEventListener("pointerdown", startSignature); signatureCanvas.addEventListener("pointermove", moveSignature); signatureCanvas.addEventListener("pointerup", endSignature); signatureCanvas.addEventListener("pointercancel", endSignature);
 
 function hardStop(title, message) {
