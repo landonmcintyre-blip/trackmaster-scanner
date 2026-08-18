@@ -1494,6 +1494,10 @@ function renderRoutePage() {
     const overviewButton = document.createElement("button");
 
     card.className = "drop-card";
+    card.addEventListener("click", event => {
+      if (event.target.closest("button")) return;
+      openDropOverview(drop.dropId);
+    });
 
     if (drop.complete) card.classList.add("complete");
     if (drop.completeWithException) {
@@ -2769,7 +2773,8 @@ function submitUnableDelivery(event) {
   if (reason === "Customer Rejected Entire Order") {
     const firstName = document.getElementById("reject-first-name").value.trim(), lastName = document.getElementById("reject-last-name").value.trim(), company = document.getElementById("reject-company").value.trim(), phone = document.getElementById("reject-phone").value.trim(), email = document.getElementById("reject-email").value.trim(), leftAtSite = unableDeliveryForm.querySelector('[name="left-at-site"]:checked')?.value;
     if (!firstName || !meaningful(lastName, 3) || !company || phone.replace(/\D/g, "").length < 10 || !/^\S+@\S+\.\S+$/.test(email) || !leftAtSite || !customerSignature) { unableMessage.textContent = "Complete every customer field and collect a signature."; return; }
-    if (leftAtSite === "Yes" && unablePhotos.size < 4) { unablePhotoPanel.hidden = false; renderUnablePhotoSlots(["Overall view 1", "Overall view 2", "Overall view 3", "Overall view 4"]); unableMessage.textContent = "The order was left onsite. Add four overall photos, then complete again."; return; }
+    const rejectionPhotoLabels = ["Overall view 1", "Overall view 2", "Overall view 3", "Overall view 4"];
+    if (rejectionPhotoLabels.some(label => !unablePhotos.get(label))) { unablePhotoPanel.hidden = false; renderUnablePhotoSlots(rejectionPhotoLabels); unableMessage.textContent = "Add four overall photos of the rejected order, then complete again."; return; }
     rejection = { firstName, lastName, company, phone, email, leftAtSite, signature: customerSignature };
   }
   if (reason === "Driver Returning to Yard") { submitReturnToYard(); return; }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v27.5-landscape-signature-form";
+const CACHE_NAME = "trackmaster-shell-v27.7-drop-card-shortcut";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,8 +10,8 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("style.css?v=27.5", APP_SCOPE).href,
-  new URL("scanner.js?v=27.5", APP_SCOPE).href,
+  new URL("style.css?v=27.7", APP_SCOPE).href,
+  new URL("scanner.js?v=27.7", APP_SCOPE).href,
   ZXING_URL
 ];
 
