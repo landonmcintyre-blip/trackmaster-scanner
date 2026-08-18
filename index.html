@@ -10,7 +10,7 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=26.2">
+  <link rel="stylesheet" href="style.css?v=27.0">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
@@ -135,7 +135,15 @@
       </button>
 
       <div id="overview-progress" class="overview-progress"></div>
+      <section id="in-progress-section" class="in-progress-section" hidden>
+        <h2>In Progress</h2>
+        <div id="in-progress-list"></div>
+      </section>
       <section id="overview-carton-list" class="carton-list"></section>
+      <div class="drop-exception-actions">
+        <button id="unable-delivery-button" class="unable-delivery-button" type="button">Unable to Complete Delivery</button>
+        <button id="overview-reset-button" class="test-reset-button" type="button">TEST: Reset Delivery</button>
+      </div>
     </section>
 
     <section id="scanner-page" class="scanner-page" hidden>
@@ -192,10 +200,6 @@
         Report Damage
       </button>
 
-      <button id="test-reset-button" class="test-reset-button" type="button">
-        TEST: Reset This Drop
-      </button>
-
       <section class="results">
         <h2>Last scanned carton</h2>
         <div id="scan-result">None</div>
@@ -204,7 +208,39 @@
         <div id="scan-count">0</div>
         <div id="remaining-count">0 cartons remaining</div>
       </section>
+      <section class="scanner-carton-history">
+        <h2>Scanned cartons</h2>
+        <div id="scanner-carton-list" class="scanner-carton-list">None yet</div>
+      </section>
     </section>
+
+    <section id="carton-workflow-page" class="damage-form-page" hidden>
+      <header class="scanner-header"><button id="carton-workflow-back" class="back-button" type="button">← Drop</button><div><span class="summary-label">Carton verification</span><h1 id="carton-workflow-title">Carton</h1></div></header>
+      <div id="carton-workflow-details" class="damage-carton-details"></div>
+      <div id="unknown-type-panel" class="unknown-type-panel" hidden><label for="assigned-carton-type">Carton type wasn’t provided. Select the physical carton type.</label><select id="assigned-carton-type"><option value="" selected disabled>Select carton type…</option><option>Bundle</option><option>Skid</option><option>Stick</option><option>Box</option><option>Flat</option></select></div>
+      <fieldset class="damage-photo-group"><legend>Required carton photos</legend><div id="carton-photo-fields" class="photo-field-list"></div></fieldset>
+      <div id="carton-workflow-message" class="login-message"></div>
+      <button id="continue-carton-workflow" class="primary-button" type="button">Continue</button>
+      <button id="discard-carton-workflow" class="secondary-button danger-outline" type="button">Discard Draft</button>
+    </section>
+
+    <section id="bundle-prompt-page" class="damage-form-page" hidden>
+      <div class="damage-complete-card bundle-prompt-card"><h1>More cartons banded to this bundle?</h1><p>The first scanned carton counts as carton 1.</p><button class="primary-button bundle-choice-no" data-bundle-extra="0" type="button">No</button><div class="bundle-choice-row"><button data-bundle-extra="1" type="button">+1</button><button data-bundle-extra="2" type="button">+2</button></div><button class="bundle-choice-three" data-bundle-extra="3" type="button">+3</button><button id="bundle-more-button" class="link-button" type="button">More…</button><div id="bundle-more-panel" hidden><label for="bundle-more-count">Additional cartons</label><input id="bundle-more-count" type="number" inputmode="numeric" min="4" max="50"><button id="bundle-more-next" class="secondary-button" type="button">Next</button></div><button id="bundle-prompt-back" class="link-button" type="button">Back to photos</button></div>
+    </section>
+
+    <section id="finalize-page" class="damage-form-page" hidden>
+      <header class="scanner-header"><button id="finalize-back" class="back-button" type="button">← Drop</button><div><span class="summary-label">Finalize delivery</span><h1>Delivery Photos</h1></div></header>
+      <div class="all-accounted-banner">✓ All cartons accounted for</div>
+      <fieldset class="damage-photo-group"><legend>Overall delivery photos</legend><p>At least one photo is required. Add as many as needed.</p><div class="damage-photo-actions"><input id="finalize-camera-input" type="file" accept="image/*" capture="environment"><button id="take-finalize-photo" class="secondary-button" type="button">Take Photo</button><input id="finalize-library-input" type="file" accept="image/*" multiple><button id="add-finalize-photos" class="photo-library-button" type="button">🖼️</button></div><div id="finalize-photo-previews" class="damage-photo-previews"></div></fieldset>
+      <p class="judgment-prompt">In your judgment, do these photos adequately show the condition and placement of the entire delivery?</p><div id="finalize-message" class="login-message"></div><button id="complete-delivery-button" class="primary-button" type="button">Complete Delivery</button>
+    </section>
+
+    <section id="unable-delivery-page" class="damage-form-page" hidden>
+      <header class="scanner-header"><button id="unable-back" class="back-button" type="button">← Drop</button><div><span class="summary-label">Delivery exception</span><h1>Unable to Complete Delivery</h1></div></header>
+      <form id="unable-delivery-form" class="damage-form" novalidate><label for="unable-reason">Reason</label><select id="unable-reason" required><option value="" selected disabled>Select reason…</option><option value="Business Closed">Business closed</option><option value="Locked Gate">Locked gate</option><option value="Inaccessible Jobsite">Inaccessible jobsite</option><option value="Driver Returning to Yard">Driver returning to yard</option><option value="Customer Rejected Entire Order">Customer rejected entire order</option></select><div id="unable-explanation-panel" hidden><label for="unable-explanation">Explanation</label><textarea id="unable-explanation" minlength="10" maxlength="1000"></textarea><div class="field-help">Minimum 10 characters</div></div><div id="unable-photo-panel" hidden><fieldset class="damage-photo-group"><legend id="unable-photo-legend">Required evidence</legend><div id="unable-photo-fields" class="photo-field-list"></div></fieldset></div><div id="rejection-customer-panel" hidden><label for="reject-first-name">First name</label><input id="reject-first-name"><label for="reject-last-name">Last name</label><input id="reject-last-name"><label for="reject-company">Company</label><input id="reject-company"><label for="reject-phone">Phone number</label><input id="reject-phone" type="tel"><label for="reject-email">Email</label><input id="reject-email" type="email"><fieldset class="tag-status-options"><legend>Order left at delivery site?</legend><label><input type="radio" name="left-at-site" value="Yes"> Yes</label><label><input type="radio" name="left-at-site" value="No"> No</label></fieldset><button id="open-signature-button" class="secondary-button" type="button">Add Signature</button><img id="signature-preview" class="signature-preview" alt="Customer signature" hidden></div><div id="unable-message" class="login-message"></div><button class="primary-button" type="submit">Mark Not Delivered</button></form>
+    </section>
+
+    <dialog id="signature-dialog" class="signature-dialog"><div class="signature-dialog-content"><h2>Customer Signature</h2><canvas id="signature-canvas"></canvas><div class="signature-actions"><button id="clear-signature" class="secondary-button" type="button">Clear</button><button id="accept-signature" class="primary-button" type="button" disabled>Accept</button></div></div></dialog>
 
     <section id="damage-form-page" class="damage-form-page" hidden>
       <header class="scanner-header">
@@ -363,7 +399,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=26.2"></script>
+  <script src="scanner.js?v=27.0"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

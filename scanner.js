@@ -69,7 +69,7 @@ const startButton = document.getElementById("start-button");
 const flashlightButton = document.getElementById(
   "flashlight-button"
 );
-const resetButton = document.getElementById("test-reset-button");
+const resetButton = document.getElementById("overview-reset-button");
 const dropIdBox = document.getElementById("drop-id");
 const remainingBox = document.getElementById("remaining-count");
 const openDamageScannerButton = document.getElementById("open-damage-scanner");
@@ -92,6 +92,41 @@ const damageFormMessage = document.getElementById("damage-form-message");
 const damageCompleteSummary = document.getElementById("damage-complete-summary");
 const reportMoreDamageButton = document.getElementById("report-more-damage");
 const returnToDropButton = document.getElementById("return-to-drop");
+const inProgressSection = document.getElementById("in-progress-section");
+const inProgressList = document.getElementById("in-progress-list");
+const scannerCartonList = document.getElementById("scanner-carton-list");
+const unableDeliveryButton = document.getElementById("unable-delivery-button");
+const cartonWorkflowPage = document.getElementById("carton-workflow-page");
+const cartonWorkflowTitle = document.getElementById("carton-workflow-title");
+const cartonWorkflowDetails = document.getElementById("carton-workflow-details");
+const cartonPhotoFields = document.getElementById("carton-photo-fields");
+const cartonWorkflowMessage = document.getElementById("carton-workflow-message");
+const unknownTypePanel = document.getElementById("unknown-type-panel");
+const assignedCartonType = document.getElementById("assigned-carton-type");
+const continueCartonWorkflowButton = document.getElementById("continue-carton-workflow");
+const discardCartonWorkflowButton = document.getElementById("discard-carton-workflow");
+const bundlePromptPage = document.getElementById("bundle-prompt-page");
+const bundleMoreButton = document.getElementById("bundle-more-button");
+const bundleMorePanel = document.getElementById("bundle-more-panel");
+const bundleMoreCount = document.getElementById("bundle-more-count");
+const bundleMoreNext = document.getElementById("bundle-more-next");
+const finalizePage = document.getElementById("finalize-page");
+const finalizeCameraInput = document.getElementById("finalize-camera-input");
+const finalizeLibraryInput = document.getElementById("finalize-library-input");
+const finalizePhotoPreviews = document.getElementById("finalize-photo-previews");
+const finalizeMessage = document.getElementById("finalize-message");
+const unableDeliveryPage = document.getElementById("unable-delivery-page");
+const unableDeliveryForm = document.getElementById("unable-delivery-form");
+const unableReason = document.getElementById("unable-reason");
+const unableExplanationPanel = document.getElementById("unable-explanation-panel");
+const unableExplanation = document.getElementById("unable-explanation");
+const unablePhotoPanel = document.getElementById("unable-photo-panel");
+const unablePhotoFields = document.getElementById("unable-photo-fields");
+const rejectionCustomerPanel = document.getElementById("rejection-customer-panel");
+const unableMessage = document.getElementById("unable-message");
+const signatureDialog = document.getElementById("signature-dialog");
+const signatureCanvas = document.getElementById("signature-canvas");
+const signaturePreview = document.getElementById("signature-preview");
 
 const API_URL =
   "https://script.google.com/macros/s/AKfycby-XWD-6dWtzXHG1PtTy03Km326GsCmy3j4aKjJwa-0mRQI1w73iAsqc1ocr8XLeuEYog/exec";
@@ -129,6 +164,11 @@ const MISSING_KEY =
   `trackmaster-missing-${shippingEvent || "missing"}`;
 const DAMAGED_KEY =
   `trackmaster-damaged-${shippingEvent || "missing"}`;
+const DRAFTS_KEY = `trackmaster-drafts-${shippingEvent || "missing"}`;
+const GROUPS_KEY = `trackmaster-bundle-groups-${shippingEvent || "missing"}`;
+const METHODS_KEY = `trackmaster-scan-methods-${shippingEvent || "missing"}`;
+const COMPLETIONS_KEY = `trackmaster-completions-${shippingEvent || "missing"}`;
+const UNDELIVERED_KEY = `trackmaster-undelivered-${shippingEvent || "missing"}`;
 
 let activeDropId = requestedDropId;
 let routeData = null;
@@ -155,6 +195,11 @@ let selectedDamageCarton = null;
 let productPhotos = new Map();
 let damagePhotos = [];
 let damageReturnScreen = "overview";
+let activeCartonDraft = null;
+let attachedMode = null;
+let finalizePhotos = [];
+let unablePhotos = new Map();
+let customerSignature = "";
 
 const scannedCartons = new Set();
 
@@ -240,9 +285,22 @@ flashlightButton.addEventListener("click", toggleFlashlight);
 backToRouteButton.addEventListener("click", showRoutePage);
 overviewBackToRouteButton.addEventListener("click", showRoutePage);
 overviewScanButton.addEventListener("click", () => {
-  if (activeDropId) openScannerForDrop(activeDropId, true);
+  if (!activeDropId) return;
+  if (overviewScanButton.dataset.action === "finalize") openFinalizeDelivery();
+  else if (overviewScanButton.dataset.action === "reopen") reopenUndeliveredDrop();
+  else if (overviewScanButton.dataset.action === "draft") {
+    const draft = Object.values(getDrafts()).find(item => item.dropId === activeDropId);
+    if (draft) showCartonWorkflow(draft);
+  }
+  else openScannerForDrop(activeDropId, true);
 });
 scannerOverviewButton.addEventListener("click", () => {
+  if (attachedMode) {
+    stopScanner();
+    scannerPage.hidden = true;
+    bundlePromptPage.hidden = false;
+    return;
+  }
   if (activeDropId) openDropOverview(activeDropId);
 });
 refreshRouteButton.addEventListener("click", refreshRouteManually);
@@ -268,6 +326,27 @@ takeDamagePhotoButton.addEventListener("click", () => damageCameraInput.click())
 damageCameraInput.addEventListener("change", addSelectedDamagePhotos);
 reportMoreDamageButton.addEventListener("click", openDamageScanner);
 returnToDropButton.addEventListener("click", () => openDropOverview(activeDropId));
+continueCartonWorkflowButton.addEventListener("click", continueCartonWorkflow);
+discardCartonWorkflowButton.addEventListener("click", discardActiveDraft);
+document.getElementById("carton-workflow-back").addEventListener("click", () => openDropOverview(activeDropId));
+document.querySelectorAll("[data-bundle-extra]").forEach(button => button.addEventListener("click", () => chooseBundleExtra(Number(button.dataset.bundleExtra))));
+bundleMoreButton.addEventListener("click", () => { bundleMorePanel.hidden = false; bundleMoreCount.focus(); });
+bundleMoreNext.addEventListener("click", () => chooseBundleExtra(Number(bundleMoreCount.value)));
+document.getElementById("bundle-prompt-back").addEventListener("click", () => showCartonWorkflow(activeCartonDraft));
+assignedCartonType.addEventListener("change", () => { if (activeCartonDraft) { activeCartonDraft.cartonType = assignedCartonType.value; activeCartonDraft.driverAssignedType = true; activeCartonDraft.photos = {}; saveActiveDraft(); renderCartonPhotoFields(); } });
+unableDeliveryButton.addEventListener("click", openUnableDelivery);
+document.getElementById("unable-back").addEventListener("click", () => openDropOverview(activeDropId));
+unableReason.addEventListener("change", configureUnableDeliveryForm);
+unableDeliveryForm.addEventListener("submit", submitUnableDelivery);
+document.getElementById("finalize-back").addEventListener("click", () => openDropOverview(activeDropId));
+document.getElementById("take-finalize-photo").addEventListener("click", () => finalizeCameraInput.click());
+document.getElementById("add-finalize-photos").addEventListener("click", () => finalizeLibraryInput.click());
+finalizeCameraInput.addEventListener("change", addFinalizePhotos);
+finalizeLibraryInput.addEventListener("change", addFinalizePhotos);
+document.getElementById("complete-delivery-button").addEventListener("click", completeDelivery);
+document.getElementById("open-signature-button").addEventListener("click", openSignatureDialog);
+document.getElementById("clear-signature").addEventListener("click", clearSignature);
+document.getElementById("accept-signature").addEventListener("click", acceptSignature);
 manualEntryCancelButton.addEventListener("click", closeManualEntry);
 manualEntryForm.addEventListener("submit", submitManualEntry);
 captureManualPhotoButton.addEventListener("click", captureManualPhoto);
@@ -735,69 +814,26 @@ function clearLocalDropScanData() {
 
 async function resetCurrentDropForTesting() {
   const confirmed = window.confirm(
-    "TEST RESET\n\nDelete all recorded scans for this drop?"
+    "TEST: RESET ENTIRE DELIVERY?\n\nThis will erase all activity for this drop and return it to an untouched state."
   );
 
   if (!confirmed) return;
-
-  if (!navigator.onLine) {
-    statusBox.textContent = "RESET NEEDS SERVICE";
-    resultBox.textContent =
-      "Reconnect before resetting this test drop.";
-    return;
-  }
-
   stopScanner();
   resetButton.disabled = true;
-  resetButton.textContent = "Resetting Drop...";
-  startButton.disabled = true;
-  statusBox.textContent = "Resetting drop scans...";
-
-  try {
-    const response = await fetch(API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "text/plain;charset=utf-8"
-      },
-      body: JSON.stringify({
-        action: "resetDropScans",
-        shippingEvent,
-        dropId: activeDropId
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error("Could not reach the reset service.");
-    }
-
-    const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || "The reset was rejected.");
-    }
-
-    routeDataGeneration++;
-    clearLocalDropScanData();
-    applyRouteData(routeData);
-    applyActiveDropData();
-
-    cartonDataReady = true;
-    startButton.disabled = false;
-    startButton.textContent = "Start Scanner";
-    document.body.classList.remove("scan-error");
-
-    statusBox.textContent = "Drop reset";
-    resultBox.textContent =
-      `${data.deletedCount || 0} saved scans deleted.`;
-  } catch (error) {
-    console.error(error);
-    startButton.disabled = false;
-    statusBox.textContent = "RESET FAILED";
-    resultBox.textContent = error.message;
-  } finally {
-    resetButton.disabled = false;
-    resetButton.textContent = "TEST: Reset This Drop";
-  }
+  resetButton.textContent = "Resetting…";
+  clearLocalDropScanData();
+  const dropNumbers = new Set(routeData.cartons.filter(c => c.dropId === activeDropId).map(c => String(c.cartonNumber).toUpperCase()));
+  const pruneMap = key => { const map = readStoredJson(key, {}); Object.keys(map).forEach(number => { if (dropNumbers.has(number) || map[number]?.dropId === activeDropId) delete map[number]; }); writeStoredJson(key, map); };
+  pruneMap(DRAFTS_KEY); pruneMap(GROUPS_KEY); pruneMap(METHODS_KEY);
+  const damaged = [...getDamagedCartons()].filter(n => !dropNumbers.has(n)); writeStoredJson(DAMAGED_KEY, damaged);
+  const completions = getCompletions(); delete completions[activeDropId]; writeStoredJson(COMPLETIONS_KEY, completions);
+  const undelivered = getUndelivered(); delete undelivered[activeDropId]; writeStoredJson(UNDELIVERED_KEY, undelivered);
+  localStorage.removeItem(finalizeDraftKey());
+  const queue = readStoredJson(SYNC_QUEUE_KEY, []).filter(record => !(record.shippingEvent === shippingEvent && record.dropId === activeDropId));
+  writeStoredJson(SYNC_QUEUE_KEY, queue);
+  queueRecord({ action: "resetDelivery", shippingEvent, dropId: activeDropId });
+  syncPendingRecords(); routeDataGeneration++; applyRouteData(routeData); applyActiveDropData(); renderRoutePage(); openDropOverview(activeDropId);
+  resetButton.disabled = false; resetButton.textContent = "TEST: Reset Delivery";
 }
 
 function createRecordId() {
@@ -1008,7 +1044,7 @@ async function syncPendingRecords() {
         records: submittedQueue
       }),
       keepalive: !submittedQueue.some(record =>
-        record.photoData || record.productPhotos || record.damagePhotos
+        record.photoData || record.productPhotos || record.damagePhotos || record.photos || record.rejection?.signature
       )
     });
 
@@ -1197,6 +1233,7 @@ function showRequestedStartingScreen() {
 }
 
 function showRoutePage() {
+  hideV27Pages();
   stopScanner();
   stopManualPhotoCamera();
   stopLocationWatch();
@@ -1216,6 +1253,7 @@ function showRoutePage() {
 }
 
 function openScannerForDrop(dropId, openCamera = false) {
+  hideV27Pages();
   damageMode = false;
   document.body.classList.remove("damage-mode");
   openDamageScannerButton.textContent = "Report Damage";
@@ -1243,6 +1281,7 @@ function openScannerForDrop(dropId, openCamera = false) {
 }
 
 function openDropOverview(dropId) {
+  hideV27Pages();
   stopScanner();
   stopManualPhotoCamera();
   stopLocationWatch();
@@ -1304,6 +1343,7 @@ function applyActiveDropData() {
     : `Ready from phone — ${activeDropTotal} cartons for this drop`;
   startButton.disabled = false;
   startButton.textContent = "Start Scanner";
+  renderScannerCartonList();
 }
 
 function renderRoutePage() {
@@ -1349,6 +1389,8 @@ function renderRoutePage() {
 
   const knownAccepted = getKnownAcceptedCartons();
   const missingCartons = getMissingCartons();
+  const completionRecords = getCompletions();
+  const undeliveredRecords = getUndelivered();
   const drops = [...dropMap.values()]
     .map(drop => {
       const scannedCount = drop.cartons.filter(carton =>
@@ -1367,12 +1409,11 @@ function renderRoutePage() {
           );
         }
       ).length;
-      const complete =
-        scannedCount === drop.cartons.length && missingCount === 0;
-      const completeWithException =
-        !complete &&
-        scannedCount + missingCount === drop.cartons.length;
-      const finished = complete || completeWithException;
+      const completionRecord = completionRecords[drop.dropId];
+      const undeliveredRecord = undeliveredRecords[drop.dropId];
+      const complete = Boolean(completionRecord);
+      const completeWithException = complete && missingCount > 0;
+      const finished = complete || Boolean(undeliveredRecord);
       const started = (scannedCount > 0 || missingCount > 0) && !finished;
 
       return {
@@ -1382,14 +1423,16 @@ function renderRoutePage() {
         complete,
         completeWithException,
         finished,
-        started
+        started,
+        undeliveredRecord,
+        finishedAt: completionRecord?.completedAt || undeliveredRecord?.recordedAt || ""
       };
     })
     .sort((a, b) => {
       const rank = drop =>
         drop.started ? 0 : drop.finished ? 2 : 1;
 
-      return rank(a) - rank(b) || a.dropNumber - b.dropNumber;
+      return rank(a) - rank(b) || (a.finished && b.finished ? String(a.finishedAt).localeCompare(String(b.finishedAt)) : a.dropNumber - b.dropNumber);
     });
 
   dropListBox.replaceChildren();
@@ -1411,6 +1454,7 @@ function renderRoutePage() {
     if (drop.completeWithException) {
       card.classList.add("complete-with-exception");
     }
+    if (drop.undeliveredRecord) card.classList.add("complete-with-exception");
     if (drop.started) card.classList.add("in-progress");
 
     details.className = "drop-card-details";
@@ -1423,7 +1467,9 @@ function renderRoutePage() {
     overviewButton.className = "drop-action-button overview-button";
 
     number.textContent = `Drop ${drop.dropNumber}`;
-    progress.textContent = drop.complete
+    progress.textContent = drop.undeliveredRecord
+      ? drop.undeliveredRecord.status.toUpperCase()
+      : drop.complete
       ? "COMPLETE"
       : drop.completeWithException
         ? `COMPLETE · ${drop.missingCount} MISSING`
@@ -1482,6 +1528,9 @@ function renderDropOverview() {
   const accepted = getKnownAcceptedCartons();
   const missing = getMissingCartons();
   const damaged = getDamagedCartons();
+  const drafts = Object.values(getDrafts()).filter(draft => draft.dropId === activeDropId);
+  const undelivered = getUndelivered()[activeDropId];
+  const completion = getCompletions()[activeDropId];
   const scannedCount = cartons.filter(carton =>
     accepted.has(String(carton.cartonNumber).trim().toUpperCase())
   ).length;
@@ -1503,8 +1552,23 @@ function renderDropOverview() {
   overviewProgress.textContent =
     `${scannedCount} scanned · ${missingCount} missing · ` +
     `${cartons.length - scannedCount - missingCount} remaining`;
-  overviewScanButton.textContent =
-    scannedCount || missingCount ? "Resume Scanner" : "Start Scanner";
+  const allAccounted = scannedCount + missingCount === cartons.length && !drafts.length;
+  overviewScanButton.dataset.action = allAccounted ? "finalize" : drafts.length ? "draft" : "scan";
+  overviewScanButton.textContent = completion ? "✓ Delivery Complete" : undelivered ? "Reopen Delivery" : allAccounted ? "Finalize Delivery" : drafts.length ? "Continue In-Progress Carton" : scannedCount || missingCount ? "Resume Scanner" : "Start Scanner";
+  overviewScanButton.disabled = Boolean(completion);
+  if (undelivered) { overviewScanButton.disabled = false; overviewScanButton.dataset.action = "reopen"; }
+  unableDeliveryButton.hidden = Boolean(completion || undelivered);
+  inProgressSection.hidden = !drafts.length;
+  inProgressList.replaceChildren();
+  drafts.forEach(draft => {
+    const card = document.createElement("article"); card.className = "draft-card";
+    const labels = requiredCartonPhotoLabels(draft.cartonType); const photoCount = labels.filter(label => draft.photos?.[label]).length;
+    card.innerHTML = `<strong>${draft.cartonNumber} — ${draft.cartonType || "Type needed"}</strong><span>Photos: ${photoCount} of ${labels.length}${draft.attached?.length ? ` · Attached: ${draft.attached.length} of ${draft.extraExpected}` : ""}</span>`;
+    const actions = document.createElement("div"); actions.className = "draft-card-actions";
+    const resume = document.createElement("button"); resume.className = "primary-button"; resume.textContent = "Continue"; resume.addEventListener("click", () => showCartonWorkflow(draft));
+    const discard = document.createElement("button"); discard.className = "secondary-button"; discard.textContent = "Discard"; discard.addEventListener("click", () => { activeCartonDraft = draft; discardActiveDraft(); });
+    actions.append(resume, discard); card.append(actions); inProgressList.append(card);
+  });
   overviewCartonList.replaceChildren();
 
   const orderedCartons = [...cartons].sort((a, b) => {
@@ -1651,6 +1715,8 @@ function resetDamageForm() {
     const cameraInput = document.createElement("input");
     const libraryInput = document.createElement("input");
     const libraryButton = document.createElement("button");
+    const preview = document.createElement("img");
+    const deleteButton = document.createElement("button");
     title.textContent = label;
     cameraInput.type = "file";
     cameraInput.accept = "image/*";
@@ -1661,6 +1727,14 @@ function resetDamageForm() {
     libraryButton.className = "photo-library-button";
     libraryButton.setAttribute("aria-label", `Choose ${label} from photos`);
     libraryButton.textContent = "🖼️";
+    preview.className = "product-photo-preview";
+    preview.alt = `${label} preview`;
+    preview.hidden = true;
+    deleteButton.type = "button";
+    deleteButton.className = "delete-product-photo";
+    deleteButton.setAttribute("aria-label", `Delete ${label} photo`);
+    deleteButton.textContent = "×";
+    deleteButton.hidden = true;
     libraryButton.addEventListener("click", event => {
       event.stopPropagation();
       libraryInput.click();
@@ -1669,14 +1743,26 @@ function resetDamageForm() {
       const file = input.files?.[0];
       if (!file) return;
       productPhotos.set(label, await imageFileToDataUrl(file));
+      preview.src = productPhotos.get(label);
+      preview.hidden = false;
+      deleteButton.hidden = false;
       wrapper.classList.add("complete");
       title.textContent = `✓ ${label}`;
       input.value = "";
     };
     cameraInput.addEventListener("change", () => saveProductPhoto(cameraInput));
     libraryInput.addEventListener("change", () => saveProductPhoto(libraryInput));
+    deleteButton.addEventListener("click", event => {
+      event.stopPropagation();
+      productPhotos.delete(label);
+      preview.src = "";
+      preview.hidden = true;
+      deleteButton.hidden = true;
+      wrapper.classList.remove("complete");
+      title.textContent = label;
+    });
     cameraLabel.append(title, cameraInput);
-    wrapper.append(cameraLabel, libraryInput, libraryButton);
+    wrapper.append(preview, cameraLabel, libraryInput, libraryButton, deleteButton);
     productPhotoFields.append(wrapper);
   });
   renderDamagePhotoCount();
@@ -1774,7 +1860,7 @@ function submitDamageReport(event) {
 
   const cartonNumber = String(selectedDamageCarton.cartonNumber).trim().toUpperCase();
   const driver = readStoredJson(DRIVER_SESSION_KEY, null);
-  queueRecord({
+  const damageRecord = {
     action: "damageReport",
     shippingEvent,
     dropId: activeDropId,
@@ -1787,10 +1873,19 @@ function submitDamageReport(event) {
     productPhotos: [...productPhotos.entries()].map(([label, data]) => ({ label, data })),
     damagePhotos,
     ...getLocationMetadata()
-  });
-  rememberAcceptedCarton(cartonNumber);
-  rememberDamagedCarton(cartonNumber);
-  scannedCartons.add(cartonNumber);
+  };
+  const existingGroup = getGroups()[cartonNumber];
+  damageRecord.associatedCartons = existingGroup?.members || [cartonNumber];
+  const alreadyCompleted = getKnownAcceptedCartons().has(cartonNumber);
+  const selectedType = normalizedType(selectedDamageCarton.cartonType);
+  if (!alreadyCompleted && selectedType === "Bundle" && !existingGroup) {
+    const values = [...productPhotos.values()];
+    activeCartonDraft = { id: createRecordId(), cartonNumber, dropId: activeDropId, cartonType: "Bundle", entryMethod: "Barcode", photos: { "First end": values[0], "First corner": values[1], "Opposite end": values[2], "Opposite corner": values[3] }, attached: [], pendingDamage: damageRecord, createdAt: new Date().toISOString() };
+    saveActiveDraft(); damageFormPage.hidden = true; bundlePromptPage.hidden = false; return;
+  }
+  queueRecord(damageRecord);
+  const affected = existingGroup?.members || [cartonNumber];
+  affected.forEach(number => { rememberDamagedCarton(number); if (!getKnownAcceptedCartons().has(number)) { rememberAcceptedCarton(number); scannedCartons.add(number); } });
   syncPendingRecords();
   renderRoutePage();
   damageFormPage.hidden = true;
@@ -2062,6 +2157,16 @@ function submitManualEntry(event) {
   }
 
   if (damageMode) {
+    identifyDamageCarton(barcode, "scanner");
+    return;
+  }
+
+  if (attachedMode) {
+    handleAttachedCartonScan(carton);
+    return;
+  }
+
+  if (damageMode) {
     openDamageForm(carton, "scanner");
     return;
   }
@@ -2072,34 +2177,13 @@ function submitManualEntry(event) {
     return;
   }
 
-  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
-
-  try {
-    queueSuccessfulScan(cartonNumber, {
-      entryMethod: "Manual",
-      explanation,
-      tagStatus,
-      photoData: manualPhotos,
-      driverId: driver?.driverId || ""
-    });
-  } catch (error) {
-    showManualValidationError(
-      "The phone could not store this manual entry. Try again."
-    );
-    return;
-  }
-
-  scannedCartons.add(cartonNumber);
   stopManualPhotoCamera();
   manualEntryPage.hidden = true;
-  scannerPage.hidden = false;
-  applyActiveDropData();
-  resultBox.textContent = cartonNumber;
-  statusBox.textContent = `Manual entry accepted: ${cartonNumber}`;
-  updateProgress();
-  renderRoutePage();
-  playBeep();
-  startScanner();
+  beginCartonWorkflow(carton, "Manual", {
+    explanation,
+    tagStatus,
+    tagEvidence: [...manualPhotos]
+  });
 }
 
 function identifyDamageCarton(cartonNumber, returnScreen = "scanner") {
@@ -2409,33 +2493,283 @@ function handleScan(rawValue) {
     return;
   }
 
-  try {
-    queueSuccessfulScan(barcode);
-  } catch (error) {
-    hardStop(
-      "SCAN NOT SAVED",
-      `${barcode}\n\nThe phone could not store this scan.`
-    );
-    return;
-  }
-
-  scannedCartons.add(barcode);
-  resultBox.textContent = barcode;
-  statusBox.textContent = `Correct: ${barcode}`;
-  updateProgress();
-  renderRoutePage();
+  beginCartonWorkflow(carton, "Barcode");
   playBeep();
 
   if (navigator.vibrate) {
     navigator.vibrate(150);
   }
 
-  document.body.classList.add("scan-success");
-
-  setTimeout(() => {
-    document.body.classList.remove("scan-success");
-  }, 250);
 }
+
+function hideV27Pages() {
+  cartonWorkflowPage.hidden = true;
+  bundlePromptPage.hidden = true;
+  finalizePage.hidden = true;
+  unableDeliveryPage.hidden = true;
+}
+
+function getDrafts() { return readStoredJson(DRAFTS_KEY, {}); }
+function getGroups() { return readStoredJson(GROUPS_KEY, {}); }
+function getMethods() { return readStoredJson(METHODS_KEY, {}); }
+function getCompletions() { return readStoredJson(COMPLETIONS_KEY, {}); }
+function getUndelivered() { return readStoredJson(UNDELIVERED_KEY, {}); }
+
+function normalizedType(value) {
+  const type = String(value || "").trim().toLowerCase();
+  if (type === "bundle") return "Bundle";
+  if (type === "stick") return "Stick";
+  if (type === "skid" || type === "pallet") return "Skid";
+  if (type === "box") return "Box";
+  if (type === "flat") return "Flat";
+  return "";
+}
+
+function requiredCartonPhotoLabels(type) {
+  if (type === "Bundle") return ["First end", "First corner", "Opposite end", "Opposite corner"];
+  if (type === "Stick" || type === "Skid") return ["First end", "Opposite end"];
+  return type === "Box" || type === "Flat" ? ["Overall photo"] : [];
+}
+
+function beginCartonWorkflow(carton, entryMethod, manual = {}) {
+  stopScanner();
+  const cartonNumber = String(carton.cartonNumber).trim().toUpperCase();
+  const drafts = getDrafts();
+  activeCartonDraft = drafts[cartonNumber] || {
+    id: createRecordId(), cartonNumber, dropId: activeDropId,
+    cartonType: normalizedType(carton.cartonType), driverAssignedType: false,
+    entryMethod, manual, photos: {}, attached: [], createdAt: new Date().toISOString()
+  };
+  drafts[cartonNumber] = activeCartonDraft;
+  writeStoredJson(DRAFTS_KEY, drafts);
+  showCartonWorkflow(activeCartonDraft);
+}
+
+function showCartonWorkflow(draft) {
+  activeCartonDraft = draft;
+  hideV27Pages();
+  scannerPage.hidden = true; routePage.hidden = true; dropOverviewPage.hidden = true;
+  cartonWorkflowPage.hidden = false;
+  const carton = cartonLookup.get(draft.cartonNumber);
+  cartonWorkflowTitle.textContent = draft.cartonNumber;
+  cartonWorkflowDetails.textContent = `${draft.entryMethod === "Manual" ? "Manual entry · " : ""}${carton?.description || "No description available"}`;
+  unknownTypePanel.hidden = Boolean(draft.cartonType);
+  assignedCartonType.value = draft.cartonType || "";
+  cartonWorkflowMessage.textContent = "";
+  renderCartonPhotoFields();
+  window.scrollTo(0, 0);
+}
+
+function renderCartonPhotoFields() {
+  cartonPhotoFields.replaceChildren();
+  const labels = requiredCartonPhotoLabels(activeCartonDraft?.cartonType);
+  labels.forEach(label => cartonPhotoFields.append(createV27PhotoSlot(label, activeCartonDraft.photos[label] || "", data => {
+    if (data) activeCartonDraft.photos[label] = data; else delete activeCartonDraft.photos[label];
+    saveActiveDraft(); renderCartonPhotoFields();
+  })));
+}
+
+function createV27PhotoSlot(label, value, onChange) {
+  const wrapper = document.createElement("div"); wrapper.className = `damage-photo-slot${value ? " complete" : ""}`;
+  const cameraLabel = document.createElement("label");
+  const title = document.createElement("span"); title.textContent = label;
+  const input = document.createElement("input"); input.type = "file"; input.accept = "image/*"; input.capture = "environment";
+  const preview = document.createElement("img"); preview.className = "product-photo-preview"; preview.alt = label;
+  if (value) { preview.src = value; preview.hidden = false; } else preview.hidden = true;
+  input.addEventListener("change", async () => { const file = input.files?.[0]; if (file) onChange(await compressPhoto(file)); });
+  cameraLabel.append(title, preview, input);
+  const library = document.createElement("button"); library.type = "button"; library.className = "photo-library-button"; library.textContent = "🖼️";
+  const libraryInput = document.createElement("input"); libraryInput.type = "file"; libraryInput.accept = "image/*"; libraryInput.hidden = true;
+  library.addEventListener("click", () => libraryInput.click());
+  libraryInput.addEventListener("change", async () => { const file = libraryInput.files?.[0]; if (file) onChange(await compressPhoto(file)); });
+  wrapper.append(cameraLabel, libraryInput, library);
+  if (value) { const remove = document.createElement("button"); remove.type = "button"; remove.className = "delete-product-photo"; remove.textContent = "×"; remove.addEventListener("click", () => onChange("")); wrapper.append(remove); }
+  return wrapper;
+}
+
+async function compressPhoto(file) {
+  const source = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+  const image = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = reject; img.src = source; });
+  const max = 1280, scale = Math.min(1, max / Math.max(image.width, image.height));
+  const canvas = document.createElement("canvas"); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
+  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", .68);
+}
+
+function saveActiveDraft() { const drafts = getDrafts(); drafts[activeCartonDraft.cartonNumber] = activeCartonDraft; writeStoredJson(DRAFTS_KEY, drafts); }
+
+function continueCartonWorkflow() {
+  if (!activeCartonDraft.cartonType) { cartonWorkflowMessage.textContent = "Select the carton type."; return; }
+  const labels = requiredCartonPhotoLabels(activeCartonDraft.cartonType);
+  if (labels.some(label => !activeCartonDraft.photos[label])) { cartonWorkflowMessage.textContent = "Take each required carton photo."; return; }
+  if (activeCartonDraft.cartonType === "Bundle") { cartonWorkflowPage.hidden = true; bundlePromptPage.hidden = false; return; }
+  completeCartonGroup();
+}
+
+function discardActiveDraft() {
+  if (!activeCartonDraft || !confirm(`Discard unfinished work for ${activeCartonDraft.cartonNumber}?`)) return;
+  const drafts = getDrafts(); delete drafts[activeCartonDraft.cartonNumber]; writeStoredJson(DRAFTS_KEY, drafts); activeCartonDraft = null; attachedMode = null; openDropOverview(activeDropId);
+}
+
+function chooseBundleExtra(extra) {
+  if (!Number.isInteger(extra) || extra < 0 || extra > 50) { alert("Enter a valid number of additional cartons."); return; }
+  activeCartonDraft.extraExpected = extra; activeCartonDraft.attached = []; saveActiveDraft();
+  if (!extra) { completeCartonGroup(); return; }
+  attachedMode = activeCartonDraft;
+  bundlePromptPage.hidden = true; scannerPage.hidden = false; document.body.classList.remove("damage-mode");
+  dropIdBox.textContent = `Carton 2 of ${extra + 1}`; statusBox.textContent = "Scan attached C-tag"; resultBox.textContent = activeCartonDraft.cartonNumber;
+  startScanner();
+}
+
+function handleAttachedCartonScan(carton) {
+  const number = String(carton.cartonNumber).trim().toUpperCase();
+  if (number === attachedMode.cartonNumber) { statusBox.textContent = "Primary carton cannot be rescanned"; playDuplicateBeep(); return; }
+  if (attachedMode.attached.includes(number)) { statusBox.textContent = `${number} already added`; playDuplicateBeep(); return; }
+  if (getKnownAcceptedCartons().has(number)) { hardStop("ALREADY SCANNED", `${number} was completed separately.`); return; }
+  attachedMode.attached.push(number); activeCartonDraft = attachedMode; saveActiveDraft(); playBeep();
+  const total = attachedMode.extraExpected + 1, completed = attachedMode.attached.length + 1;
+  resultBox.textContent = number;
+  if (completed >= total) { stopScanner(); attachedMode = null; completeCartonGroup(); return; }
+  dropIdBox.textContent = `Carton ${completed + 1} of ${total}`; statusBox.textContent = `Added ${number} — scan next attached C-tag`;
+}
+
+function completeCartonGroup() {
+  const draft = activeCartonDraft;
+  const groupId = draft.id;
+  const members = [draft.cartonNumber, ...(draft.attached || [])];
+  if (draft.pendingDamage) draft.pendingDamage.associatedCartons = members;
+  const groups = getGroups(); members.forEach(number => { groups[number] = { groupId, members, photos: draft.photos, cartonType: draft.cartonType }; }); writeStoredJson(GROUPS_KEY, groups);
+  const methods = getMethods();
+  members.forEach((number, index) => {
+    const method = index === 0 ? draft.entryMethod : "Barcode";
+    methods[number] = method;
+    if (index === 0 && draft.pendingDamage) queueRecord(draft.pendingDamage);
+    else queueSuccessfulScan(number, { entryMethod: method, explanation: index === 0 ? draft.manual?.explanation : "", tagStatus: index === 0 ? draft.manual?.tagStatus : "", photoData: index === 0 ? draft.manual?.tagEvidence : "", productPhotos: draft.photos, bundleAssociationId: groupId });
+    rememberAcceptedCarton(number);
+    if (draft.pendingDamage) rememberDamagedCarton(number);
+    scannedCartons.add(number);
+  });
+  writeStoredJson(METHODS_KEY, methods);
+  const drafts = getDrafts(); delete drafts[draft.cartonNumber]; writeStoredJson(DRAFTS_KEY, drafts);
+  activeCartonDraft = null; attachedMode = null; renderRoutePage(); openScannerForDrop(activeDropId, true);
+}
+
+function renderScannerCartonList() {
+  if (!scannerCartonList || !routeData) return;
+  const methods = getMethods();
+  const cartons = routeData.cartons.filter(c => c.dropId === activeDropId && scannedCartons.has(String(c.cartonNumber).toUpperCase()));
+  scannerCartonList.replaceChildren();
+  if (!cartons.length) { scannerCartonList.textContent = "None yet"; return; }
+  cartons.forEach(carton => { const row = document.createElement("div"); const number = String(carton.cartonNumber).toUpperCase(); row.innerHTML = `<strong>${number}</strong><span>${normalizedType(carton.cartonType) || getGroups()[number]?.cartonType || "Carton"}${methods[number] === "Manual" ? " · Manual" : ""}</span>`; scannerCartonList.append(row); });
+}
+
+function finalizeDraftKey() { return `trackmaster-finalize-draft-${shippingEvent}-${activeDropId}`; }
+
+function openFinalizeDelivery() {
+  const cartons = routeData.cartons.filter(c => c.dropId === activeDropId);
+  const accepted = getKnownAcceptedCartons(), missing = getMissingCartons();
+  if (Object.values(getDrafts()).some(d => d.dropId === activeDropId) || cartons.some(c => { const n = String(c.cartonNumber).toUpperCase(); return !accepted.has(n) && !missing.has(n); })) { alert("Every carton must be accounted for before finalizing."); return; }
+  hideV27Pages(); dropOverviewPage.hidden = true; finalizePage.hidden = false;
+  finalizePhotos = readStoredJson(finalizeDraftKey(), []); renderFinalizePhotos(); window.scrollTo(0, 0);
+  setTimeout(() => finalizeCameraInput.click(), 100);
+}
+
+async function addFinalizePhotos(event) {
+  for (const file of [...(event.target.files || [])]) finalizePhotos.push(await compressPhoto(file));
+  writeStoredJson(finalizeDraftKey(), finalizePhotos); event.target.value = ""; renderFinalizePhotos();
+}
+
+function renderFinalizePhotos() {
+  finalizePhotoPreviews.replaceChildren();
+  finalizePhotos.forEach((data, index) => { const box = document.createElement("div"); const img = document.createElement("img"); img.src = data; const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "×"; remove.addEventListener("click", () => { finalizePhotos.splice(index, 1); writeStoredJson(finalizeDraftKey(), finalizePhotos); renderFinalizePhotos(); }); box.append(img, remove); finalizePhotoPreviews.append(box); });
+}
+
+function completeDelivery() {
+  if (!finalizePhotos.length) { finalizeMessage.textContent = "Add at least one overall delivery photo."; return; }
+  const completions = getCompletions(); completions[activeDropId] = { completedAt: new Date().toISOString(), status: "pending", photos: finalizePhotos }; writeStoredJson(COMPLETIONS_KEY, completions);
+  const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+  queueRecord({ action: "completeDelivery", shippingEvent, dropId: activeDropId, driverId: driver?.driverId || "", photos: finalizePhotos, ...getLocationMetadata() });
+  localStorage.removeItem(finalizeDraftKey()); finalizePhotos = []; syncPendingRecords(); showRoutePage();
+}
+
+function openUnableDelivery() {
+  hideV27Pages(); dropOverviewPage.hidden = true; unableDeliveryPage.hidden = false; unableDeliveryForm.reset(); unablePhotos = new Map(); customerSignature = ""; signaturePreview.hidden = true; unableMessage.textContent = ""; configureUnableDeliveryForm(); window.scrollTo(0, 0);
+}
+
+function configureUnableDeliveryForm() {
+  const reason = unableReason.value;
+  unableExplanationPanel.hidden = !["Inaccessible Jobsite", "Driver Returning to Yard"].includes(reason);
+  rejectionCustomerPanel.hidden = reason !== "Customer Rejected Entire Order";
+  unablePhotoPanel.hidden = !["Business Closed", "Locked Gate"].includes(reason);
+  const labels = reason === "Business Closed" ? ["Business front"] : reason === "Locked Gate" ? ["Gate", "Lock close-up"] : [];
+  renderUnablePhotoSlots(labels);
+}
+
+function renderUnablePhotoSlots(labels) {
+  unablePhotoFields.replaceChildren();
+  labels.forEach(label => unablePhotoFields.append(createV27PhotoSlot(label, unablePhotos.get(label) || "", data => { if (data) unablePhotos.set(label, data); else unablePhotos.delete(label); renderUnablePhotoSlots(labels); })));
+}
+
+function meaningful(value, minimum) { return String(value || "").replace(/[^a-z0-9]/gi, "").length >= minimum; }
+
+function submitUnableDelivery(event) {
+  event.preventDefault(); unableMessage.textContent = "";
+  const reason = unableReason.value;
+  if (!reason) { unableMessage.textContent = "Select a reason."; return; }
+  if (["Inaccessible Jobsite", "Driver Returning to Yard"].includes(reason) && !meaningful(unableExplanation.value, 10)) { unableMessage.textContent = "Enter at least 10 meaningful characters."; return; }
+  const requiredEvidence = reason === "Business Closed" ? ["Business front"] : reason === "Locked Gate" ? ["Gate", "Lock close-up"] : [];
+  if (requiredEvidence.some(label => !unablePhotos.get(label))) { unableMessage.textContent = "Add each required evidence photo."; return; }
+  let rejection = null;
+  if (reason === "Customer Rejected Entire Order") {
+    const firstName = document.getElementById("reject-first-name").value.trim(), lastName = document.getElementById("reject-last-name").value.trim(), company = document.getElementById("reject-company").value.trim(), phone = document.getElementById("reject-phone").value.trim(), email = document.getElementById("reject-email").value.trim(), leftAtSite = unableDeliveryForm.querySelector('[name="left-at-site"]:checked')?.value;
+    if (!firstName || !meaningful(lastName, 3) || !company || phone.replace(/\D/g, "").length < 10 || !/^\S+@\S+\.\S+$/.test(email) || !leftAtSite || !customerSignature) { unableMessage.textContent = "Complete every customer field and collect a signature."; return; }
+    if (leftAtSite === "Yes" && unablePhotos.size < 4) { unablePhotoPanel.hidden = false; renderUnablePhotoSlots(["Overall view 1", "Overall view 2", "Overall view 3", "Overall view 4"]); unableMessage.textContent = "The order was left onsite. Add four overall photos, then complete again."; return; }
+    rejection = { firstName, lastName, company, phone, email, leftAtSite, signature: customerSignature };
+  }
+  if (reason === "Driver Returning to Yard") { submitReturnToYard(); return; }
+  saveUndeliveredDrops([activeDropId], reason, rejection);
+}
+
+function activeDropIds() {
+  const completed = getCompletions(), undelivered = getUndelivered();
+  return [...new Set(routeData.cartons.map(c => c.dropId))].filter(id => !completed[id] && !undelivered[id]);
+}
+
+function dropHasActivity(dropId) {
+  const numbers = new Set(routeData.cartons.filter(c => c.dropId === dropId).map(c => String(c.cartonNumber).toUpperCase()));
+  return Object.values(getDrafts()).some(d => d.dropId === dropId) || [...getKnownAcceptedCartons()].some(n => numbers.has(n)) || [...getDamagedCartons()].some(n => numbers.has(n));
+}
+
+function submitReturnToYard() {
+  const affected = activeDropIds();
+  const blocked = affected.filter(dropHasActivity);
+  if (blocked.length) { unableMessage.textContent = "Returning to Yard is blocked because delivery work is in progress. Finish or discard the affected work first."; return; }
+  if (!confirm(`This drop and all ${Math.max(affected.length - 1, 0)} remaining active drops will be marked not delivered. All cartons must remain on the truck. Are you sure?`)) { showRoutePage(); return; }
+  saveUndeliveredDrops(affected, "Driver Returning to Yard", null);
+}
+
+function saveUndeliveredDrops(dropIds, reason, rejection) {
+  const records = getUndelivered(); const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+  dropIds.forEach(dropId => { const leftAtSite = rejection?.leftAtSite === "Yes"; records[dropId] = { reason, status: leftAtSite ? "Customer Rejected · Left at Site · Pickup Required" : reason === "Customer Rejected Entire Order" ? "Customer Rejected · Remains on Truck" : `Not Delivered · ${reason}`, recordedAt: new Date().toISOString(), rejection, photos: Object.fromEntries(unablePhotos) }; queueRecord({ action: "dropNotDelivered", shippingEvent, dropId, reason, rejection, photos: Object.fromEntries(unablePhotos), driverId: driver?.driverId || "", ...getLocationMetadata() }); });
+  writeStoredJson(UNDELIVERED_KEY, records); syncPendingRecords(); showRoutePage();
+}
+
+function reopenUndeliveredDrop() {
+  if (!confirm("Has the customer or site become available for delivery?")) return;
+  const records = getUndelivered(); const previous = records[activeDropId]; delete records[activeDropId]; writeStoredJson(UNDELIVERED_KEY, records);
+  queueRecord({ action: "reopenDelivery", shippingEvent, dropId: activeDropId, previousReason: previous?.reason || "" }); renderRoutePage(); openDropOverview(activeDropId);
+}
+
+let signatureDrawing = false, signatureHasInk = false;
+function openSignatureDialog() { signatureDialog.showModal(); resizeSignatureCanvas(); clearSignature(); }
+function resizeSignatureCanvas() { const rect = signatureCanvas.getBoundingClientRect(); signatureCanvas.width = Math.max(600, Math.round(rect.width * devicePixelRatio)); signatureCanvas.height = Math.max(250, Math.round(rect.height * devicePixelRatio)); const ctx = signatureCanvas.getContext("2d"); ctx.scale(devicePixelRatio, devicePixelRatio); ctx.lineWidth = 3; ctx.lineCap = "round"; }
+function signaturePoint(event) { const rect = signatureCanvas.getBoundingClientRect(), touch = event.touches?.[0] || event; return { x: touch.clientX - rect.left, y: touch.clientY - rect.top }; }
+function startSignature(event) { event.preventDefault(); signatureDrawing = true; const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+function moveSignature(event) { if (!signatureDrawing) return; event.preventDefault(); const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.lineTo(p.x, p.y); ctx.stroke(); signatureHasInk = true; document.getElementById("accept-signature").disabled = false; }
+function endSignature() { signatureDrawing = false; }
+function clearSignature() { const ctx = signatureCanvas.getContext("2d"); ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height); signatureHasInk = false; document.getElementById("accept-signature").disabled = true; }
+function acceptSignature() { if (!signatureHasInk) return; customerSignature = signatureCanvas.toDataURL("image/png"); signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.close(); document.getElementById("open-signature-button").textContent = "Replace Signature"; }
+signatureCanvas.addEventListener("pointerdown", startSignature); signatureCanvas.addEventListener("pointermove", moveSignature); signatureCanvas.addEventListener("pointerup", endSignature); signatureCanvas.addEventListener("pointercancel", endSignature);
 
 function hardStop(title, message) {
   stopScanner();
