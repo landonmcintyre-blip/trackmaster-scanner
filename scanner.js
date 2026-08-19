@@ -135,6 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
+const APP_BUILD = "28.2";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -669,10 +670,12 @@ function openAssignedRoute(assignedShippingEvent) {
     "shippingEvent",
     String(assignedShippingEvent)
   );
+  routeUrl.searchParams.set("v", APP_BUILD);
   window.location.replace(routeUrl.toString());
 }
 
 function signOutDriver() {
+  signatureDialog.hidden = true;
   stopScanner();
   stopManualPhotoCamera();
   stopLocationWatch();
@@ -680,6 +683,8 @@ function signOutDriver() {
 
   const cleanUrl = new URL(window.location.href);
   cleanUrl.search = "";
+  cleanUrl.searchParams.set("logout", "1");
+  cleanUrl.searchParams.set("v", APP_BUILD);
   window.location.replace(cleanUrl.toString());
 }
 
@@ -690,6 +695,7 @@ function showMyRoutes() {
   const routesUrl = new URL(window.location.href);
   routesUrl.search = "";
   routesUrl.searchParams.set("chooseRoute", "1");
+  routesUrl.searchParams.set("v", APP_BUILD);
   window.location.assign(routesUrl.toString());
 }
 

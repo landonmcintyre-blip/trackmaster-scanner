@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v28.1-signature-centering";
+const CACHE_NAME = "trackmaster-shell-v28.2-navigation-cache-fix";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,8 +10,8 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("style.css?v=28.1", APP_SCOPE).href,
-  new URL("scanner.js?v=28.1", APP_SCOPE).href,
+  new URL("style.css?v=28.2", APP_SCOPE).href,
+  new URL("scanner.js?v=28.2", APP_SCOPE).href,
   ZXING_URL
 ];
 
@@ -59,7 +59,7 @@ self.addEventListener("fetch", event => {
 
   if (request.mode === "navigate") {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-store" })
         .then(response => {
           const copy = response.clone();
 
