@@ -1112,7 +1112,7 @@ function queueScanException(cartonNumber, exceptionType, notes) {
   syncPendingRecords();
 }
 
-async function async function syncPendingRecords() {
+async function syncPendingRecords() {
   if (syncRunning || !navigator.onLine) return;
 
   const submittedQueue = readStoredJson(SYNC_QUEUE_KEY, []);
@@ -1123,12 +1123,16 @@ async function async function syncPendingRecords() {
   }
 
   syncRunning = true;
-  pendingSyncBox.textContent = `Syncing ${submittedQueue.length}…`;
+  pendingSyncBox.textContent = `Syncing 1 of ${submittedQueue.length}…`;
 
   let syncError = "";
 
   try {
-    const uploadQueue = await materializePhotoTokens(submittedQueue);
+    // Upload one queued record at a time. Photo records can be large, and
+    // batching several base64 images into one request can make an otherwise
+    // valid Apps Script request time out or be rejected as a unit.
+    const submittedRecord = submittedQueue[0];
+    const uploadRecord = await materializePhotoTokens(submittedRecord);
 
     const response = await fetch(API_URL, {
       method: "POST",
@@ -1137,14 +1141,14 @@ async function async function syncPendingRecords() {
       },
       body: JSON.stringify({
         action: "syncBatch",
-        records: uploadQueue
+        records: [uploadRecord]
       }),
-      keepalive: !submittedQueue.some(record =>
-        record.photoData ||
-        record.productPhotos ||
-        record.damagePhotos ||
-        record.photos ||
-        record.rejection?.signature
+      keepalive: !(
+        submittedRecord.photoData ||
+        submittedRecord.productPhotos ||
+        submittedRecord.damagePhotos ||
+        submittedRecord.photos ||
+        submittedRecord.rejection?.signature
       )
     });
 
@@ -1158,15 +1162,11 @@ async function async function syncPendingRecords() {
       throw new Error(data.error || "The server rejected this sync.");
     }
 
-    const submittedIds = new Set(
-      submittedQueue.map(record => record.id)
-    );
-
     const latestQueue = readStoredJson(SYNC_QUEUE_KEY, []);
 
     writeStoredJson(
       SYNC_QUEUE_KEY,
-      latestQueue.filter(record => !submittedIds.has(record.id))
+      latestQueue.filter(record => record.id !== submittedRecord.id)
     );
 
     syncRetryDelay = 2000;
@@ -1185,7 +1185,7 @@ async function async function syncPendingRecords() {
     renderPendingSync();
 
     if (readStoredJson(SYNC_QUEUE_KEY, []).length) {
-      setTimeout(syncPendingRecords, syncRetryDelay);
+      setTimeout(syncPendingRecords, 250);
     }
   }
 }
