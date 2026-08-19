@@ -672,15 +672,21 @@ body.damage-mode #open-damage-scanner {
 .signature-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (orientation: portrait) {
   .signature-dialog-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
     width: 86vh;
     height: 92vw;
-    transform: rotate(90deg);
+    transform: translate(-50%, -50%) rotate(90deg);
     transform-origin: center;
   }
   .signature-pad-wrap { flex: 1; width: 100%; min-height: 0; aspect-ratio: auto; }
 }
 @media (orientation: landscape) {
   .signature-dialog-content {
+    position: relative;
+    top: auto;
+    left: auto;
     width: 96vw;
     height: 92dvh;
     transform: none;
