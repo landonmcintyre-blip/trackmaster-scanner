@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v27.8-full-signature-form";
+const CACHE_NAME = "trackmaster-shell-v27.9-version-badge";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,8 +10,8 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("style.css?v=27.8", APP_SCOPE).href,
-  new URL("scanner.js?v=27.8", APP_SCOPE).href,
+  new URL("style.css?v=27.9", APP_SCOPE).href,
+  new URL("scanner.js?v=27.9", APP_SCOPE).href,
   ZXING_URL
 ];
 
