@@ -1112,12 +1112,8 @@ function queueScanException(cartonNumber, exceptionType, notes) {
   syncPendingRecords();
 }
 
-async function syncPendingRecords() {
-  if (
-    syncRunning ||
-    !navigator.onLine ||
-    Date.now() < nextSyncAttemptAt
-  ) return;
+async function async function syncPendingRecords() {
+  if (syncRunning || !navigator.onLine) return;
 
   const submittedQueue = readStoredJson(SYNC_QUEUE_KEY, []);
 
@@ -1129,8 +1125,11 @@ async function syncPendingRecords() {
   syncRunning = true;
   pendingSyncBox.textContent = `Syncing ${submittedQueue.length}…`;
 
+  let syncError = "";
+
   try {
     const uploadQueue = await materializePhotoTokens(submittedQueue);
+
     const response = await fetch(API_URL, {
       method: "POST",
       headers: {
@@ -1141,27 +1140,22 @@ async function syncPendingRecords() {
         records: uploadQueue
       }),
       keepalive: !submittedQueue.some(record =>
-        record.photoData || record.productPhotos || record.damagePhotos || record.photos || record.rejection?.signature
+        record.photoData ||
+        record.productPhotos ||
+        record.damagePhotos ||
+        record.photos ||
+        record.rejection?.signature
       )
     });
 
     if (!response.ok) {
-      throw new Error("Batch sync request failed.");
+      throw new Error(`Server request failed (${response.status}).`);
     }
 
-    const responseText = await response.text();
-    let data;
-
-    try {
-      data = JSON.parse(responseText);
-    } catch (error) {
-      throw new Error(
-        `Server returned an invalid response${responseText ? `: ${responseText.slice(0, 160)}` : "."}`
-      );
-    }
+    const data = await response.json();
 
     if (!data.success) {
-      throw new Error(data.error || "Batch sync was rejected.");
+      throw new Error(data.error || "The server rejected this sync.");
     }
 
     const submittedIds = new Set(
@@ -1169,26 +1163,29 @@ async function syncPendingRecords() {
     );
 
     const latestQueue = readStoredJson(SYNC_QUEUE_KEY, []);
-    const remainingQueue = latestQueue.filter(
-      record => !submittedIds.has(record.id)
+
+    writeStoredJson(
+      SYNC_QUEUE_KEY,
+      latestQueue.filter(record => !submittedIds.has(record.id))
     );
 
-    writeStoredJson(SYNC_QUEUE_KEY, remainingQueue);
     syncRetryDelay = 2000;
-    nextSyncAttemptAt = 0;
   } catch (error) {
-    console.error("TrackMaster batch sync paused:", error);
-    pendingSyncBox.textContent = `Sync error: ${error.message}`;
-    syncRetryDelay = Math.min(syncRetryDelay * 2, 60000);
-    nextSyncAttemptAt = Date.now() + syncRetryDelay;
+    console.error("TrackMaster sync error:", error);
+    syncError = error.message || "Unknown sync error.";
   } finally {
     syncRunning = false;
-    renderPendingSync();
     renderRoutePage();
 
+    if (syncError) {
+      pendingSyncBox.textContent = `SYNC PAUSED: ${syncError}`;
+      return;
+    }
+
+    renderPendingSync();
+
     if (readStoredJson(SYNC_QUEUE_KEY, []).length) {
-      pendingSyncBox.textContent =
-        `Sync paused — retrying in ${Math.ceil(Math.max(nextSyncAttemptAt - Date.now(), 0) / 1000)}s`;
+      setTimeout(syncPendingRecords, syncRetryDelay);
     }
   }
 }
