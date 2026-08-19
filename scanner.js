@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "28.4";
+const APP_BUILD = "28.5";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -2098,9 +2098,10 @@ function getSelectedTagStatus() {
 }
 
 function getRequiredManualPhotoLabels() {
-  return getSelectedTagStatus() === "Won't Scan"
-    ? ["Tag/barcode"]
-    : ["Product side", "Opposite side", "First end", "Opposite end"];
+  const tagStatus = getSelectedTagStatus();
+  if (tagStatus === "Won't Scan") return ["Tag/barcode"];
+  if (tagStatus === "Other") return [];
+  return ["Product side", "Opposite side", "First end", "Opposite end"];
 }
 
 function resetManualPhotos() {
@@ -2119,7 +2120,7 @@ function updateManualPhotoInstructions() {
   const complete = manualPhotos.length === requiredPhotos.length;
 
   manualExplanationSection.hidden = tagStatus !== "Other";
-  manualPhotoSection.hidden = false;
+  manualPhotoSection.hidden = requiredPhotos.length === 0;
   manualPhotoProgress.textContent =
     `${manualPhotos.length} of ${requiredPhotos.length} photos captured`;
 

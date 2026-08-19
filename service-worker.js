@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v28.4-yard-fixes";
+const CACHE_NAME = "trackmaster-shell-v28.5-manual-other";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,9 +10,9 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("manifest.webmanifest?v=28.4", APP_SCOPE).href,
-  new URL("style.css?v=28.4", APP_SCOPE).href,
-  new URL("scanner.js?v=28.4", APP_SCOPE).href,
+  new URL("manifest.webmanifest?v=28.5", APP_SCOPE).href,
+  new URL("style.css?v=28.5", APP_SCOPE).href,
+  new URL("scanner.js?v=28.5", APP_SCOPE).href,
   ZXING_URL
 ];
 
