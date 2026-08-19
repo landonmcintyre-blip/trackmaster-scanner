@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "28.5";
+const APP_BUILD = "28.6";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -2744,7 +2744,6 @@ function openFinalizeDelivery() {
   if (Object.values(getDrafts()).some(d => d.dropId === activeDropId) || cartons.some(c => { const n = String(c.cartonNumber).toUpperCase(); return !accepted.has(n) && !missing.has(n); })) { alert("Every carton must be accounted for before finalizing."); return; }
   hideV27Pages(); dropOverviewPage.hidden = true; finalizePage.hidden = false;
   finalizePhotos = readStoredJson(finalizeDraftKey(), []); renderFinalizePhotos(); window.scrollTo(0, 0);
-  setTimeout(() => finalizeCameraInput.click(), 100);
 }
 
 async function addFinalizePhotos(event) {
