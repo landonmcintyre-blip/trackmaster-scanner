@@ -1,4 +1,4 @@
-const CACHE_NAME = "trackmaster-shell-v29.0-photo-reports";
+const CACHE_NAME = "trackmaster-shell-v29.1-photo-reports";
 const APP_SCOPE = self.registration.scope;
 
 const INDEX_URL =
@@ -10,9 +10,9 @@ const ZXING_URL =
 const APP_FILES = [
   APP_SCOPE,
   INDEX_URL,
-  new URL("manifest.webmanifest?v=29.0", APP_SCOPE).href,
-  new URL("style.css?v=29.0", APP_SCOPE).href,
-  new URL("scanner.js?v=29.0", APP_SCOPE).href,
+  new URL("manifest.webmanifest?v=29.1", APP_SCOPE).href,
+  new URL("style.css?v=29.1", APP_SCOPE).href,
+  new URL("scanner.js?v=29.1", APP_SCOPE).href,
   ZXING_URL
 ];
 

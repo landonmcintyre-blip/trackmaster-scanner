@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "29.0";
+const APP_BUILD = "29.1";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -191,6 +191,7 @@ let appStarted = false;
 let latestLocation = null;
 let locationWatchId = null;
 let locationPermissionDenied = false;
+let nextSyncAttemptAt = 0;
 let manualPhotoStream = null;
 let manualPhotos = [];
 let damageMode = false;
@@ -1112,7 +1113,11 @@ function queueScanException(cartonNumber, exceptionType, notes) {
 }
 
 async function syncPendingRecords() {
-  if (syncRunning || !navigator.onLine) return;
+  if (
+    syncRunning ||
+    !navigator.onLine ||
+    Date.now() < nextSyncAttemptAt
+  ) return;
 
   const submittedQueue = readStoredJson(SYNC_QUEUE_KEY, []);
 
@@ -1144,7 +1149,16 @@ async function syncPendingRecords() {
       throw new Error("Batch sync request failed.");
     }
 
-    const data = await response.json();
+    const responseText = await response.text();
+    let data;
+
+    try {
+      data = JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(
+        `Server returned an invalid response${responseText ? `: ${responseText.slice(0, 160)}` : "."}`
+      );
+    }
 
     if (!data.success) {
       throw new Error(data.error || "Batch sync was rejected.");
@@ -1161,21 +1175,22 @@ async function syncPendingRecords() {
 
     writeStoredJson(SYNC_QUEUE_KEY, remainingQueue);
     syncRetryDelay = 2000;
+    nextSyncAttemptAt = 0;
   } catch (error) {
     console.error("TrackMaster batch sync paused:", error);
-
-pendingSyncBox.textContent =
-  `Sync error: ${error.message}`;;
+    pendingSyncBox.textContent = `Sync error: ${error.message}`;
     syncRetryDelay = Math.min(syncRetryDelay * 2, 60000);
+    nextSyncAttemptAt = Date.now() + syncRetryDelay;
   } finally {
     syncRunning = false;
     renderPendingSync();
     renderRoutePage();
 
     if (readStoredJson(SYNC_QUEUE_KEY, []).length) {
-  pendingSyncBox.textContent =
-    "Sync paused — check the error above";
-}
+      pendingSyncBox.textContent =
+        `Sync paused — retrying in ${Math.ceil(Math.max(nextSyncAttemptAt - Date.now(), 0) / 1000)}s`;
+    }
+  }
 }
 
 async function loadCartonData() {
@@ -3108,5 +3123,4 @@ function playBeep() {
 
   oscillator.start();
   oscillator.stop(audioContext.currentTime + 0.12);
-}
 }
