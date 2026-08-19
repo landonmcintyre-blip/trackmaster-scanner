@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "28.6";
+const APP_BUILD = "29.0";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -183,6 +183,8 @@ let syncRunning = false;
 let routeDataGeneration = 0;
 let audioContext;
 let cameraTrack = null;
+let torchPreferred = false;
+let syncRetryDelay = 2000;
 let torchAvailable = false;
 let torchOn = false;
 let appStarted = false;
@@ -480,6 +482,8 @@ async function handleLogin(event) {
     writeStoredJson(DRIVER_SESSION_KEY, {
       driverId: String(data.driver.driverId),
       driverName: String(data.driver.driverName || ""),
+      firstName: String(data.driver.firstName || ""),
+      lastName: String(data.driver.lastName || ""),
       phone: String(data.driver.phone),
       signedInAt: new Date().toISOString()
     });
@@ -542,8 +546,8 @@ async function loadAssignedRoutes(forceRefresh = false) {
   scannerPage.hidden = true;
   manualEntryPage.hidden = true;
   routePickerPage.hidden = false;
-  driverWelcome.textContent = driver.driverName
-    ? `Signed in as ${driver.driverName}`
+  driverWelcome.textContent = driver.firstName || driver.driverName
+    ? `Signed in as ${driver.firstName || driver.driverName}`
     : `Driver ${driver.driverId}`;
   assignedRouteList.innerHTML = "";
 
@@ -1119,8 +1123,10 @@ async function syncPendingRecords() {
     );
 
     writeStoredJson(SYNC_QUEUE_KEY, remainingQueue);
+    syncRetryDelay = 2000;
   } catch (error) {
     console.error("TrackMaster batch sync paused:", error);
+    syncRetryDelay = Math.min(syncRetryDelay * 2, 60000);
   } finally {
     syncRunning = false;
     renderPendingSync();
@@ -1130,7 +1136,7 @@ async function syncPendingRecords() {
       navigator.onLine &&
       readStoredJson(SYNC_QUEUE_KEY, []).length
     ) {
-      setTimeout(syncPendingRecords, 0);
+      setTimeout(syncPendingRecords, syncRetryDelay);
     }
   }
 }
@@ -1891,7 +1897,7 @@ function meaningfulLength(value) {
   return String(value || "").replace(/[^a-z0-9]/gi, "").length;
 }
 
-function submitDamageReport(event) {
+async function submitDamageReport(event) {
   event.preventDefault();
   if (!selectedDamageCarton) return;
   const description = damageDescription.value.trim();
@@ -1915,6 +1921,15 @@ function submitDamageReport(event) {
 
   const cartonNumber = String(selectedDamageCarton.cartonNumber).trim().toUpperCase();
   const driver = readStoredJson(DRIVER_SESSION_KEY, null);
+  const existingGroup = getGroups()[cartonNumber];
+  const affected = existingGroup?.members || [cartonNumber];
+  const photoStampMeta = { capturedAt: new Date().toISOString(), ...getLocationMetadata() };
+  const stampLines = buildCartonStampLines(affected, photoStampMeta);
+  const stampedProductPhotos = [];
+  for (const [label, data] of productPhotos.entries()) {
+    stampedProductPhotos.push({ label, data: await stampPhotoToken(data, stampLines) });
+  }
+  const stampedDamagePhotos = await Promise.all(damagePhotos.map(data => stampPhotoToken(data, stampLines)));
   const damageRecord = {
     action: "damageReport",
     shippingEvent,
@@ -1925,21 +1940,20 @@ function submitDamageReport(event) {
     estimatedPanels: document.getElementById("damage-panel-count").value,
     description,
     disposition,
-    productPhotos: [...productPhotos.entries()].map(([label, data]) => ({ label, data })),
-    damagePhotos,
+    productPhotos: stampedProductPhotos,
+    damagePhotos: stampedDamagePhotos,
+    photoStampMeta,
     ...getLocationMetadata()
   };
-  const existingGroup = getGroups()[cartonNumber];
   damageRecord.associatedCartons = existingGroup?.members || [cartonNumber];
   const alreadyCompleted = getKnownAcceptedCartons().has(cartonNumber);
   const selectedType = normalizedType(selectedDamageCarton.cartonType);
   if (!alreadyCompleted && selectedType === "Bundle" && !existingGroup) {
-    const values = [...productPhotos.values()];
-    activeCartonDraft = { id: createRecordId(), cartonNumber, dropId: activeDropId, cartonType: "Bundle", entryMethod: "Barcode", photos: { "First end": values[0], "First corner": values[1], "Opposite end": values[2], "Opposite corner": values[3] }, attached: [], pendingDamage: damageRecord, createdAt: new Date().toISOString() };
+    const values = stampedProductPhotos.map(photo => photo.data);
+    activeCartonDraft = { id: createRecordId(), cartonNumber, dropId: activeDropId, cartonType: "Bundle", entryMethod: "Barcode", photos: { "First end": values[0], "First corner": values[1], "Opposite end": values[2], "Opposite corner": values[3] }, photoMeta: { "First end": photoStampMeta, "First corner": photoStampMeta, "Opposite end": photoStampMeta, "Opposite corner": photoStampMeta }, attached: [], pendingDamage: damageRecord, createdAt: new Date().toISOString() };
     saveActiveDraft(); damageFormPage.hidden = true; bundlePromptPage.hidden = false; return;
   }
   queueRecord(damageRecord);
-  const affected = existingGroup?.members || [cartonNumber];
   affected.forEach(number => { rememberDamagedCarton(number); if (!getKnownAcceptedCartons().has(number)) { rememberAcceptedCarton(number); scannedCartons.add(number); } });
   syncPendingRecords();
   renderRoutePage();
@@ -2033,6 +2047,10 @@ async function startManualPhotoCamera() {
 
   manualPhotoCamera.srcObject = manualPhotoStream;
   await manualPhotoCamera.play();
+  if (torchPreferred) {
+    const track = manualPhotoStream.getVideoTracks?.()[0];
+    try { await track?.applyConstraints?.({ advanced: [{ torch: true }] }); } catch (_) {}
+  }
   submitManualEntryButton.disabled = false;
 }
 
@@ -2429,12 +2447,19 @@ function configureCameraControls() {
   torchOn = false;
   flashlightButton.hidden = !torchAvailable;
   updateFlashlightButton();
+  if (torchPreferred && torchAvailable) setTimeout(() => applyTorchState(true), 50);
 }
 
 async function toggleFlashlight() {
   if (!cameraTrack || !torchAvailable) return;
 
   const nextTorchState = !torchOn;
+  torchPreferred = nextTorchState;
+  await applyTorchState(nextTorchState);
+}
+
+async function applyTorchState(nextTorchState) {
+  if (!cameraTrack || !torchAvailable) return;
 
   try {
     await cameraTrack.applyConstraints({
@@ -2448,6 +2473,12 @@ async function toggleFlashlight() {
     statusBox.textContent =
       "This phone would not allow flashlight control.";
   }
+}
+
+function resetDropTorchPreference() {
+  torchPreferred = false;
+  torchOn = false;
+  updateFlashlightButton();
 }
 
 function updateFlashlightButton() {
@@ -2599,7 +2630,7 @@ function beginCartonWorkflow(carton, entryMethod, manual = {}) {
   activeCartonDraft = drafts[cartonNumber] || {
     id: createRecordId(), cartonNumber, dropId: activeDropId,
     cartonType: normalizedType(carton.cartonType), driverAssignedType: false,
-    entryMethod, manual, photos: {}, attached: [], createdAt: new Date().toISOString()
+    entryMethod, manual, photos: {}, photoMeta: {}, attached: [], createdAt: new Date().toISOString()
   };
   drafts[cartonNumber] = activeCartonDraft;
   writeStoredJson(DRAFTS_KEY, drafts);
@@ -2627,10 +2658,10 @@ function renderCartonPhotoFields() {
   labels.forEach((label, index) => cartonPhotoFields.append(createV27PhotoSlot(label, activeCartonDraft.photos[label] || "", data => {
     if (data) activeCartonDraft.photos[label] = data; else delete activeCartonDraft.photos[label];
     saveActiveDraft(); renderCartonPhotoFields();
-  }, index + 1, labels.length)));
+  }, index + 1, labels.length, { kind: "carton", cartonNumber: activeCartonDraft.cartonNumber })));
 }
 
-function createV27PhotoSlot(label, value, onChange, photoNumber = 0, photoTotal = 0) {
+function createV27PhotoSlot(label, value, onChange, photoNumber = 0, photoTotal = 0, options = {}) {
   const wrapper = document.createElement("div"); wrapper.className = `damage-photo-slot${value ? " complete" : ""}`;
   const cameraLabel = document.createElement("label");
   const title = document.createElement("span"); title.textContent = photoTotal > 1 ? `Photo ${photoNumber} of ${photoTotal} · ${label}` : label;
@@ -2640,15 +2671,37 @@ function createV27PhotoSlot(label, value, onChange, photoNumber = 0, photoTotal 
   input.addEventListener("change", async () => {
     const file = input.files?.[0];
     if (!file) return;
-    onChange(await compressPhoto(file));
-    const nextCameraInput = cartonPhotoFields.querySelector(".damage-photo-slot:not(.complete) input[capture]");
+    const meta = capturePhotoStampMeta(file);
+    if (options.kind === "carton" && activeCartonDraft) {
+      activeCartonDraft.photoMeta = activeCartonDraft.photoMeta || {};
+      activeCartonDraft.photoMeta[label] = meta;
+    }
+    const compressed = await compressPhoto(file);
+    const lines = options.kind === "carton"
+      ? buildCartonStampLines([options.cartonNumber], meta)
+      : buildOverallStampLines(meta);
+    onChange(await stampPhotoToken(compressed, lines));
+    const nextCameraInput = (options.kind === "carton" ? cartonPhotoFields : unablePhotoFields)
+      .querySelector(".damage-photo-slot:not(.complete) input[capture]");
     if (nextCameraInput) setTimeout(() => nextCameraInput.click(), 100);
   });
   cameraLabel.append(title, preview, input);
   const library = document.createElement("button"); library.type = "button"; library.className = "photo-library-button"; library.textContent = "🖼️";
   const libraryInput = document.createElement("input"); libraryInput.type = "file"; libraryInput.accept = "image/*"; libraryInput.hidden = true;
   library.addEventListener("click", () => libraryInput.click());
-  libraryInput.addEventListener("change", async () => { const file = libraryInput.files?.[0]; if (file) onChange(await compressPhoto(file)); });
+  libraryInput.addEventListener("change", async () => {
+    const file = libraryInput.files?.[0]; if (!file) return;
+    const meta = capturePhotoStampMeta(file);
+    if (options.kind === "carton" && activeCartonDraft) {
+      activeCartonDraft.photoMeta = activeCartonDraft.photoMeta || {};
+      activeCartonDraft.photoMeta[label] = meta;
+    }
+    const compressed = await compressPhoto(file);
+    const lines = options.kind === "carton"
+      ? buildCartonStampLines([options.cartonNumber], meta)
+      : buildOverallStampLines(meta);
+    onChange(await stampPhotoToken(compressed, lines));
+  });
   wrapper.append(cameraLabel, libraryInput, library);
   if (value) { const remove = document.createElement("button"); remove.type = "button"; remove.className = "delete-product-photo"; remove.textContent = "×"; remove.addEventListener("click", () => onChange("")); wrapper.append(remove); }
   return wrapper;
@@ -2661,6 +2714,88 @@ async function compressPhoto(file) {
   const canvas = document.createElement("canvas"); canvas.width = Math.round(image.width * scale); canvas.height = Math.round(image.height * scale);
   canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
   return storePhotoData(canvas.toDataURL("image/jpeg", .68));
+}
+
+function capturePhotoStampMeta(file) {
+  const location = getLocationMetadata();
+  return {
+    capturedAt: new Date(file?.lastModified || Date.now()).toISOString(),
+    latitude: location.latitude,
+    longitude: location.longitude,
+    gpsStatus: location.gpsStatus || "No GPS lock"
+  };
+}
+
+function driverStampName() {
+  const currentDriver = readStoredJson(DRIVER_SESSION_KEY, null) || {};
+  const first = String(currentDriver.firstName || currentDriver.driverName || "").trim().split(/\s+/)[0] || "Driver";
+  const last = String(currentDriver.lastName || "").trim() || String(currentDriver.driverName || "").trim().split(/\s+/).slice(1).join(" ");
+  return `${first}${last ? ` ${last.charAt(0).toUpperCase()}.` : ""}`;
+}
+
+function formatPhotoStampTime(value) {
+  const date = new Date(value || Date.now());
+  return date.toLocaleString("en-US", {
+    month: "2-digit", day: "2-digit", year: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: true
+  });
+}
+
+function photoGpsText(meta) {
+  const latitude = Number(meta?.latitude), longitude = Number(meta?.longitude);
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+    : "No GPS lock";
+}
+
+function buildCartonStampLines(cartonNumbers, meta) {
+  const cartons = cartonNumbers.map(number => cartonLookup.get(String(number).toUpperCase())).filter(Boolean);
+  const customers = [...new Set(cartons.map(carton => cleanCustomerName(carton.customer)).filter(Boolean))];
+  const sales = [...new Set(cartons.map(carton => String(carton.salesNumber || "").trim().toUpperCase()).filter(Boolean))];
+  return [
+    `${customers.join(" / ") || "Customer unavailable"} · ${cartonNumbers.join(" / ")}${sales.length ? ` · ${sales.join(" / ")}` : ""}`,
+    `${formatPhotoStampTime(meta?.capturedAt)} · ${driverStampName()} · ${photoGpsText(meta)}`
+  ];
+}
+
+function buildOverallStampLines(meta) {
+  return [
+    `${formatPhotoStampTime(meta?.capturedAt)} · ${driverStampName()}`,
+    photoGpsText(meta)
+  ];
+}
+
+async function stampPhotoToken(photoToken, lines, replaceExistingStamp = false) {
+  const source = await loadPhotoData(photoToken);
+  const image = await new Promise((resolve, reject) => {
+    const item = new Image(); item.onload = () => resolve(item); item.onerror = reject; item.src = source;
+  });
+  const footerHeight = Math.max(96, Math.round(image.naturalWidth * 0.12));
+  const sourceHeight = replaceExistingStamp
+    ? Math.max(1, image.naturalHeight - footerHeight)
+    : image.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = image.naturalWidth;
+  canvas.height = sourceHeight + footerHeight;
+  const context = canvas.getContext("2d");
+  context.drawImage(image, 0, 0, image.naturalWidth, sourceHeight, 0, 0, image.naturalWidth, sourceHeight);
+  context.fillStyle = "#111827";
+  context.fillRect(0, sourceHeight, canvas.width, footerHeight);
+  context.fillStyle = "#f97316";
+  context.fillRect(0, sourceHeight, canvas.width, Math.max(5, Math.round(canvas.width * .006)));
+  context.fillStyle = "#ffffff";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const padding = Math.max(18, Math.round(canvas.width * .025));
+  lines.slice(0, 2).forEach((line, index) => {
+    let fontSize = Math.max(18, Math.round(canvas.width * .026));
+    context.font = `700 ${fontSize}px Arial, sans-serif`;
+    while (fontSize > 13 && context.measureText(line).width > canvas.width - padding * 2) {
+      fontSize--; context.font = `700 ${fontSize}px Arial, sans-serif`;
+    }
+    context.fillText(line, canvas.width / 2, sourceHeight + footerHeight * (index ? .72 : .35));
+  });
+  return storePhotoData(canvas.toDataURL("image/jpeg", .76));
 }
 
 function saveActiveDraft() { const drafts = getDrafts(); drafts[activeCartonDraft.cartonNumber] = activeCartonDraft; writeStoredJson(DRAFTS_KEY, drafts); }
@@ -2700,10 +2835,21 @@ function handleAttachedCartonScan(carton) {
   dropIdBox.textContent = `Carton ${completed + 1} of ${total}`; statusBox.textContent = `Added ${number} — scan next attached C-tag`;
 }
 
-function completeCartonGroup() {
+async function completeCartonGroup() {
   const draft = activeCartonDraft;
   const groupId = draft.id;
   const members = [draft.cartonNumber, ...(draft.attached || [])];
+  for (const [label, photo] of Object.entries(draft.photos || {})) {
+    const meta = draft.photoMeta?.[label] || { capturedAt: draft.createdAt, ...getLocationMetadata() };
+    draft.photos[label] = await stampPhotoToken(photo, buildCartonStampLines(members, meta), true);
+  }
+  if (draft.pendingDamage) {
+    const meta = draft.pendingDamage.photoStampMeta || { capturedAt: draft.createdAt, ...getLocationMetadata() };
+    draft.pendingDamage.productPhotos = Object.entries(draft.photos).map(([label, data]) => ({ label, data }));
+    draft.pendingDamage.damagePhotos = await Promise.all((draft.pendingDamage.damagePhotos || []).map(photo =>
+      stampPhotoToken(photo, buildCartonStampLines(members, meta), true)
+    ));
+  }
   if (draft.pendingDamage) draft.pendingDamage.associatedCartons = members;
   const groups = getGroups(); members.forEach(number => { groups[number] = { groupId, members, photos: draft.photos, cartonType: draft.cartonType }; }); writeStoredJson(GROUPS_KEY, groups);
   const methods = getMethods();
@@ -2747,7 +2893,11 @@ function openFinalizeDelivery() {
 }
 
 async function addFinalizePhotos(event) {
-  for (const file of [...(event.target.files || [])]) finalizePhotos.push(await compressPhoto(file));
+  for (const file of [...(event.target.files || [])]) {
+    const meta = capturePhotoStampMeta(file);
+    const compressed = await compressPhoto(file);
+    finalizePhotos.push(await stampPhotoToken(compressed, buildOverallStampLines(meta)));
+  }
   writeStoredJson(finalizeDraftKey(), finalizePhotos); event.target.value = ""; renderFinalizePhotos();
 }
 
@@ -2761,6 +2911,7 @@ function completeDelivery() {
   const completions = getCompletions(); completions[activeDropId] = { completedAt: new Date().toISOString(), status: "pending", photos: finalizePhotos }; writeStoredJson(COMPLETIONS_KEY, completions);
   const driver = readStoredJson(DRIVER_SESSION_KEY, null);
   queueRecord({ action: "completeDelivery", shippingEvent, dropId: activeDropId, driverId: driver?.driverId || "", photos: finalizePhotos, ...getLocationMetadata() });
+  resetDropTorchPreference();
   localStorage.removeItem(finalizeDraftKey()); finalizePhotos = []; syncPendingRecords(); showRoutePage();
 }
 
@@ -2780,7 +2931,7 @@ function configureUnableDeliveryForm() {
 
 function renderUnablePhotoSlots(labels) {
   unablePhotoFields.replaceChildren();
-  labels.forEach(label => unablePhotoFields.append(createV27PhotoSlot(label, unablePhotos.get(label) || "", data => { if (data) unablePhotos.set(label, data); else unablePhotos.delete(label); renderUnablePhotoSlots(labels); })));
+  labels.forEach((label, index) => unablePhotoFields.append(createV27PhotoSlot(label, unablePhotos.get(label) || "", data => { if (data) unablePhotos.set(label, data); else unablePhotos.delete(label); renderUnablePhotoSlots(labels); }, index + 1, labels.length, { kind: "overall" })));
 }
 
 function meaningful(value, minimum) { return String(value || "").replace(/[^a-z0-9]/gi, "").length >= minimum; }
@@ -2825,6 +2976,7 @@ function submitReturnToYard() {
 function saveUndeliveredDrops(dropIds, reason, rejection) {
   const records = getUndelivered(); const driver = readStoredJson(DRIVER_SESSION_KEY, null);
   dropIds.forEach(dropId => { const leftAtSite = rejection?.leftAtSite === "Yes"; records[dropId] = { reason, status: leftAtSite ? "Customer Rejected · Left at Site · Pickup Required" : reason === "Customer Rejected Entire Order" ? "Customer Rejected · Remains on Truck" : `Not Delivered · ${reason}`, recordedAt: new Date().toISOString(), rejection, photos: Object.fromEntries(unablePhotos) }; queueRecord({ action: "dropNotDelivered", shippingEvent, dropId, reason, explanation: unableExplanation.value.trim(), rejection, photos: Object.fromEntries(unablePhotos), driverId: driver?.driverId || "", ...getLocationMetadata() }); });
+  resetDropTorchPreference();
   writeStoredJson(UNDELIVERED_KEY, records); syncPendingRecords(); showRoutePage();
 }
 

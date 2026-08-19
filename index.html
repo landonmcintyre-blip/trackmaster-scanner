@@ -13,13 +13,13 @@
 
   <title>TrackMaster</title>
 
-  <link rel="manifest" href="manifest.webmanifest?v=28.6">
-  <link rel="stylesheet" href="style.css?v=28.6">
+  <link rel="manifest" href="manifest.webmanifest?v=29.0">
+  <link rel="stylesheet" href="style.css?v=29.0">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
 <body>
-  <div class="app-version" aria-label="TrackMaster version">v28.6</div>
+  <div class="app-version" aria-label="TrackMaster version">v29.0</div>
   <main class="app-shell">
     <section id="login-page" class="login-page">
       <div class="login-card">
@@ -45,7 +45,7 @@
           <input
             id="login-pin"
             name="pin"
-            type="text"
+            type="password"
             inputmode="numeric"
             autocomplete="off"
             pattern="[0-9]*"
@@ -404,7 +404,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=28.6"></script>
+  <script src="scanner.js?v=29.0"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
