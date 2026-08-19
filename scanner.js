@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "28.3";
+const APP_BUILD = "28.4";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
@@ -2541,6 +2541,11 @@ function handleScan(rawValue) {
     return;
   }
 
+  if (attachedMode) {
+    handleAttachedCartonScan(carton);
+    return;
+  }
+
   if (scannedCartons.has(barcode)) {
     statusBox.textContent = `Already scanned: ${barcode}`;
     resultBox.textContent = barcode;
@@ -2618,20 +2623,26 @@ function showCartonWorkflow(draft) {
 function renderCartonPhotoFields() {
   cartonPhotoFields.replaceChildren();
   const labels = requiredCartonPhotoLabels(activeCartonDraft?.cartonType);
-  labels.forEach(label => cartonPhotoFields.append(createV27PhotoSlot(label, activeCartonDraft.photos[label] || "", data => {
+  labels.forEach((label, index) => cartonPhotoFields.append(createV27PhotoSlot(label, activeCartonDraft.photos[label] || "", data => {
     if (data) activeCartonDraft.photos[label] = data; else delete activeCartonDraft.photos[label];
     saveActiveDraft(); renderCartonPhotoFields();
-  })));
+  }, index + 1, labels.length)));
 }
 
-function createV27PhotoSlot(label, value, onChange) {
+function createV27PhotoSlot(label, value, onChange, photoNumber = 0, photoTotal = 0) {
   const wrapper = document.createElement("div"); wrapper.className = `damage-photo-slot${value ? " complete" : ""}`;
   const cameraLabel = document.createElement("label");
-  const title = document.createElement("span"); title.textContent = label;
+  const title = document.createElement("span"); title.textContent = photoTotal > 1 ? `Photo ${photoNumber} of ${photoTotal} · ${label}` : label;
   const input = document.createElement("input"); input.type = "file"; input.accept = "image/*"; input.capture = "environment";
   const preview = document.createElement("img"); preview.className = "product-photo-preview"; preview.alt = label;
   if (value) { preview.hidden = false; loadPhotoData(value).then(data => { preview.src = data; }); } else preview.hidden = true;
-  input.addEventListener("change", async () => { const file = input.files?.[0]; if (file) onChange(await compressPhoto(file)); });
+  input.addEventListener("change", async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    onChange(await compressPhoto(file));
+    const nextCameraInput = cartonPhotoFields.querySelector(".damage-photo-slot:not(.complete) input[capture]");
+    if (nextCameraInput) setTimeout(() => nextCameraInput.click(), 100);
+  });
   cameraLabel.append(title, preview, input);
   const library = document.createElement("button"); library.type = "button"; library.className = "photo-library-button"; library.textContent = "🖼️";
   const libraryInput = document.createElement("input"); libraryInput.type = "file"; libraryInput.accept = "image/*"; libraryInput.hidden = true;
@@ -2706,7 +2717,13 @@ function completeCartonGroup() {
   });
   writeStoredJson(METHODS_KEY, methods);
   const drafts = getDrafts(); delete drafts[draft.cartonNumber]; writeStoredJson(DRAFTS_KEY, drafts);
-  activeCartonDraft = null; attachedMode = null; renderRoutePage(); openScannerForDrop(activeDropId, true);
+  activeCartonDraft = null; attachedMode = null; renderRoutePage();
+  const accepted = getKnownAcceptedCartons();
+  const allDropCartonsScanned = routeData.cartons
+    .filter(carton => carton.dropId === activeDropId)
+    .every(carton => accepted.has(String(carton.cartonNumber).trim().toUpperCase()));
+  if (allDropCartonsScanned) openDropOverview(activeDropId);
+  else openScannerForDrop(activeDropId, true);
 }
 
 function renderScannerCartonList() {
