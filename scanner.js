@@ -230,10 +230,47 @@ async function loadPhotoData(value) {
   return new Promise((resolve, reject) => { const request = db.transaction("photos").objectStore("photos").get(id); request.onsuccess = () => resolve(request.result || ""); request.onerror = () => reject(request.error); });
 }
 
+function withTimeout(promise, milliseconds, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${label} timed out.`)),
+        milliseconds
+      )
+    )
+  ]);
+}
+
 async function materializePhotoTokens(value) {
-  if (typeof value === "string") return loadPhotoData(value);
-  if (Array.isArray(value)) return Promise.all(value.map(materializePhotoTokens));
-  if (value && typeof value === "object") { const output = {}; for (const [key, item] of Object.entries(value)) output[key] = await materializePhotoTokens(item); return output; }
+  if (typeof value === "string") {
+    if (!value.startsWith(PHOTO_TOKEN_PREFIX)) {
+      return value;
+    }
+
+    return withTimeout(
+      loadPhotoData(value),
+      10000,
+      "Photo retrieval"
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return Promise.all(
+      value.map(item => materializePhotoTokens(item))
+    );
+  }
+
+  if (value && typeof value === "object") {
+    const output = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      output[key] = await materializePhotoTokens(item);
+    }
+
+    return output;
+  }
+
   return value;
 }
 
@@ -1126,6 +1163,8 @@ async function syncPendingRecords() {
     syncRetryDelay = 2000;
   } catch (error) {
     console.error("TrackMaster batch sync paused:", error);
+    pendingSyncBox.textContent =
+  `Sync paused: ${error.message}`;
     syncRetryDelay = Math.min(syncRetryDelay * 2, 60000);
   } finally {
     syncRunning = false;
