@@ -1163,21 +1163,19 @@ async function syncPendingRecords() {
     syncRetryDelay = 2000;
   } catch (error) {
     console.error("TrackMaster batch sync paused:", error);
-    pendingSyncBox.textContent =
-  `Sync paused: ${error.message}`;
+
+pendingSyncBox.textContent =
+  `Sync error: ${error.message}`;;
     syncRetryDelay = Math.min(syncRetryDelay * 2, 60000);
   } finally {
     syncRunning = false;
     renderPendingSync();
     renderRoutePage();
 
-    if (
-      navigator.onLine &&
-      readStoredJson(SYNC_QUEUE_KEY, []).length
-    ) {
-      setTimeout(syncPendingRecords, syncRetryDelay);
-    }
-  }
+    if (readStoredJson(SYNC_QUEUE_KEY, []).length) {
+  pendingSyncBox.textContent =
+    "Sync paused — check the error above";
+}
 }
 
 async function loadCartonData() {
@@ -3110,4 +3108,5 @@ function playBeep() {
 
   oscillator.start();
   oscillator.stop(audioContext.currentTime + 0.12);
+}
 }
