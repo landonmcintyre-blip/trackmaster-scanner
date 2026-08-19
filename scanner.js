@@ -135,7 +135,7 @@ const LAST_ROUTE_KEY = "trackmaster-last-route";
 const SYNC_QUEUE_KEY = "trackmaster-sync-queue";
 const DRIVER_SESSION_KEY = "trackmaster-driver-session";
 const SAVED_PHONE_KEY = "trackmaster-saved-phone";
-const APP_BUILD = "28.2";
+const APP_BUILD = "28.3";
 
 const urlParams = new URLSearchParams(window.location.search);
 const forceRoutePicker = urlParams.get("chooseRoute") === "1";
