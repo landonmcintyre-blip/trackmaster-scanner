@@ -2812,7 +2812,7 @@ function reopenUndeliveredDrop() {
 }
 
 let signatureDrawing = false, signatureHasInk = false;
-function openSignatureDialog() { signatureDialog.showModal(); resizeSignatureCanvas(); clearSignature(); }
+function openSignatureDialog() { signatureDialog.hidden = false; requestAnimationFrame(() => { resizeSignatureCanvas(); clearSignature(); }); }
 function resizeSignatureCanvas() { const width = signatureCanvas.clientWidth, height = signatureCanvas.clientHeight; signatureCanvas.width = Math.max(600, Math.round(width * devicePixelRatio)); signatureCanvas.height = Math.max(250, Math.round(height * devicePixelRatio)); const ctx = signatureCanvas.getContext("2d"); ctx.scale(devicePixelRatio, devicePixelRatio); ctx.lineWidth = 3; ctx.lineCap = "round"; }
 function signaturePoint(event) { return { x: Number(event.offsetX), y: Number(event.offsetY) }; }
 function startSignature(event) { event.preventDefault(); signatureDrawing = true; const p = signaturePoint(event), ctx = signatureCanvas.getContext("2d"); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
@@ -2828,7 +2828,7 @@ function acceptSignature() {
   context.fillStyle = "white"; context.fillRect(0, 0, output.width, output.height);
   context.drawImage(signatureCanvas, 0, 0);
   customerSignature = output.toDataURL("image/png");
-  signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.close(); document.getElementById("open-signature-button").textContent = "Replace Signature";
+  signaturePreview.src = customerSignature; signaturePreview.hidden = false; signatureDialog.hidden = true; document.getElementById("open-signature-button").textContent = "Replace Signature";
 }
 signatureCanvas.addEventListener("pointerdown", startSignature); signatureCanvas.addEventListener("pointermove", moveSignature); signatureCanvas.addEventListener("pointerup", endSignature); signatureCanvas.addEventListener("pointercancel", endSignature);
 

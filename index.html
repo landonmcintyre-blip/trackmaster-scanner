@@ -10,12 +10,12 @@
 
   <title>TrackMaster</title>
 
-  <link rel="stylesheet" href="style.css?v=27.9">
+  <link rel="stylesheet" href="style.css?v=28.0">
   <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 </head>
 
 <body>
-  <div class="app-version" aria-label="TrackMaster version">v27.9</div>
+  <div class="app-version" aria-label="TrackMaster version">v28.0</div>
   <main class="app-shell">
     <section id="login-page" class="login-page">
       <div class="login-card">
@@ -241,7 +241,7 @@
       <form id="unable-delivery-form" class="damage-form" novalidate><label for="unable-reason">Reason</label><select id="unable-reason" required><option value="" selected disabled>Select reason…</option><option value="Business Closed">Business closed</option><option value="Locked Gate">Locked gate</option><option value="Inaccessible Jobsite">Inaccessible jobsite</option><option value="Driver Returning to Yard">Driver returning to yard</option><option value="Customer Rejected Entire Order">Customer rejected entire order</option></select><div id="unable-explanation-panel" hidden><label for="unable-explanation">Explanation</label><textarea id="unable-explanation" minlength="10" maxlength="1000"></textarea><div class="field-help">Minimum 10 characters</div></div><div id="unable-photo-panel" hidden><fieldset class="damage-photo-group"><legend id="unable-photo-legend">Required evidence</legend><div id="unable-photo-fields" class="photo-field-list"></div></fieldset></div><div id="rejection-customer-panel" hidden><label for="reject-first-name">First name</label><input id="reject-first-name"><label for="reject-last-name">Last name</label><input id="reject-last-name"><label for="reject-company">Company</label><input id="reject-company"><label for="reject-phone">Phone number</label><input id="reject-phone" type="tel"><label for="reject-email">Email</label><input id="reject-email" type="email"><fieldset class="tag-status-options"><legend>Order left at delivery site?</legend><label><input type="radio" name="left-at-site" value="Yes"> Yes</label><label><input type="radio" name="left-at-site" value="No"> No</label></fieldset><button id="open-signature-button" class="secondary-button" type="button">Add Signature</button><img id="signature-preview" class="signature-preview" alt="Customer signature" hidden></div><div id="unable-message" class="login-message"></div><button class="primary-button" type="submit">Mark Not Delivered</button></form>
     </section>
 
-    <dialog id="signature-dialog" class="signature-dialog"><div class="signature-dialog-content"><h2>Customer Signature</h2><div class="signature-pad-wrap"><canvas id="signature-canvas"></canvas><div class="signature-baseline" aria-hidden="true"><strong>X</strong><span></span></div></div><div class="signature-actions"><button id="clear-signature" class="secondary-button" type="button">Clear</button><button id="accept-signature" class="primary-button" type="button" disabled>Accept</button></div></div></dialog>
+    <div id="signature-dialog" class="signature-dialog" hidden><div class="signature-dialog-content"><h2>Customer Signature</h2><div class="signature-pad-wrap"><canvas id="signature-canvas"></canvas><div class="signature-baseline" aria-hidden="true"><strong>X</strong><span></span></div></div><div class="signature-actions"><button id="clear-signature" class="secondary-button" type="button">Clear</button><button id="accept-signature" class="primary-button" type="button" disabled>Accept</button></div></div></div>
 
     <section id="damage-form-page" class="damage-form-page" hidden>
       <header class="scanner-header">
@@ -400,7 +400,7 @@
     </section>
   </main>
 
-  <script src="scanner.js?v=27.9"></script>
+  <script src="scanner.js?v=28.0"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
